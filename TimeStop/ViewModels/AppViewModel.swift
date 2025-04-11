@@ -162,45 +162,125 @@ class AppViewModel: ObservableObject {
     }
     
     func loadUserData() {
+        // Create a centralized error logger
+        let logError = { (error: Error, operation: String) in
+            print("I/O Error: \(operation) - \(error.localizedDescription)")
+            
+            // In a production app, we might want to log this to an analytics service
+            // analyticsService.logError(error, context: operation)
+            
+            // Optionally notify the user about the error
+            NotificationCenter.default.post(
+                name: NSNotification.Name("DataOperationError"),
+                object: nil,
+                userInfo: ["error": error, "operation": operation]
+            )
+        }
+        
         // Simulate loading user data from UserDefaults or other storage
-        if let savedUser = UserDefaults.standard.data(forKey: "currentUser") {
-            do {
-                let decoder = JSONDecoder()
-                currentUser = try decoder.decode(User.self, from: savedUser)
-                isAuthenticated = currentUser != nil
-            } catch {
-                print("Failed to load user: \(error)")
+        do {
+            if let savedUser = UserDefaults.standard.data(forKey: "currentUser") {
+                do {
+                    let decoder = JSONDecoder()
+                    currentUser = try decoder.decode(User.self, from: savedUser)
+                    isAuthenticated = currentUser != nil
+                } catch {
+                    logError(error, "decoding user data")
+                    
+                    // Attempt data recovery
+                    if let backupPath = getBackupPath(for: "currentUser"),
+                       let backupData = try? Data(contentsOf: backupPath) {
+                        do {
+                            currentUser = try JSONDecoder().decode(User.self, from: backupData)
+                            isAuthenticated = currentUser != nil
+                            print("Successfully recovered user data from backup")
+                        } catch {
+                            logError(error, "recovering user data from backup")
+                        }
+                    }
+                }
             }
-        }
-        
-        // Load tasks
-        if let savedTasks = UserDefaults.standard.data(forKey: "tasks") {
-            do {
-                let decoder = JSONDecoder()
-                tasks = try decoder.decode([Task].self, from: savedTasks)
-            } catch {
-                print("Failed to load tasks: \(error)")
+            
+            // Load tasks
+            if let savedTasks = UserDefaults.standard.data(forKey: "tasks") {
+                do {
+                    let decoder = JSONDecoder()
+                    tasks = try decoder.decode([Task].self, from: savedTasks)
+                } catch {
+                    logError(error, "decoding tasks data")
+                    
+                    // Attempt data recovery
+                    if let backupPath = getBackupPath(for: "tasks"),
+                       let backupData = try? Data(contentsOf: backupPath) {
+                        do {
+                            tasks = try JSONDecoder().decode([Task].self, from: backupData)
+                            print("Successfully recovered tasks data from backup")
+                        } catch {
+                            logError(error, "recovering tasks data from backup")
+                        }
+                    }
+                }
             }
+            
+            // Load sound settings with validation
+            if let soundEnabledValue = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool {
+                soundEnabled = soundEnabledValue
+            } else {
+                // Set default and log the issue
+                soundEnabled = true
+                print("Sound setting not found, using default value")
+            }
+            
+            // Load vibration settings with validation
+            if let vibrationEnabledValue = UserDefaults.standard.object(forKey: "vibrationEnabled") as? Bool {
+                vibrationEnabled = vibrationEnabledValue
+            } else {
+                // Set default and log the issue
+                vibrationEnabled = true
+                print("Vibration setting not found, using default value")
+            }
+        } catch {
+            logError(error, "general data loading")
         }
-        
-        // Load sound settings
-        soundEnabled = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool ?? true
-        
-        // Load vibration settings
-        vibrationEnabled = UserDefaults.standard.object(forKey: "vibrationEnabled") as? Bool ?? true
         
         updateStatistics(with: tasks)
     }
     
     func saveUserData() {
+        // Create a centralized error logger
+        let logError = { (error: Error, operation: String) in
+            print("I/O Error: \(operation) - \(error.localizedDescription)")
+            
+            // In a production app, we might want to log this to an analytics service
+            // analyticsService.logError(error, context: operation)
+            
+            // Optionally notify the user about the error
+            NotificationCenter.default.post(
+                name: NSNotification.Name("DataOperationError"),
+                object: nil,
+                userInfo: ["error": error, "operation": operation]
+            )
+        }
+        
         // Save user data
         if let currentUser = currentUser {
             do {
                 let encoder = JSONEncoder()
                 let userData = try encoder.encode(currentUser)
+                
+                // Create backup of current data before overwriting
+                if let existingData = UserDefaults.standard.data(forKey: "currentUser") {
+                    createBackup(data: existingData, for: "currentUser")
+                }
+                
                 UserDefaults.standard.set(userData, forKey: "currentUser")
+                
+                // Verify the data was saved correctly
+                if UserDefaults.standard.data(forKey: "currentUser") == nil {
+                    throw NSError(domain: "com.timestop.usersaving", code: 100, userInfo: [NSLocalizedDescriptionKey: "Failed to verify user data was saved"])
+                }
             } catch {
-                print("Failed to save user: \(error)")
+                logError(error, "encoding and saving user data")
             }
         }
         
@@ -208,9 +288,49 @@ class AppViewModel: ObservableObject {
         do {
             let encoder = JSONEncoder()
             let tasksData = try encoder.encode(tasks)
+            
+            // Create backup of current data before overwriting
+            if let existingData = UserDefaults.standard.data(forKey: "tasks") {
+                createBackup(data: existingData, for: "tasks")
+            }
+            
             UserDefaults.standard.set(tasksData, forKey: "tasks")
+            
+            // Verify the data was saved correctly
+            if UserDefaults.standard.data(forKey: "tasks") == nil {
+                throw NSError(domain: "com.timestop.taskssaving", code: 101, userInfo: [NSLocalizedDescriptionKey: "Failed to verify tasks data was saved"])
+            }
         } catch {
-            print("Failed to save tasks: \(error)")
+            logError(error, "encoding and saving tasks data")
+        }
+        
+        // Force UserDefaults to save to disk
+        UserDefaults.standard.synchronize()
+    }
+    
+    // Helper function to create backup of data
+    private func createBackup(data: Data, for key: String) {
+        guard let backupPath = getBackupPath(for: key) else {
+            print("Failed to create backup path for \(key)")
+            return
+        }
+        
+        do {
+            try data.write(to: backupPath)
+        } catch {
+            print("Failed to create backup for \(key): \(error)")
+        }
+    }
+    
+    // Helper function to get backup file path
+    private func getBackupPath(for key: String) -> URL? {
+        do {
+            let fileManager = FileManager.default
+            let documentsDirectory = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            return documentsDirectory.appendingPathComponent("\(key)_backup.json")
+        } catch {
+            print("Failed to get backup path for \(key): \(error)")
+            return nil
         }
     }
     

@@ -77,7 +77,7 @@ struct SettingsView: View {
                             }
                         }
                         .toggleStyle(SwitchToggleStyle(tint: themeManager.colors.primary))
-                        .onChange(of: viewModel.soundEnabled) { oldValue, newValue in
+                        .onChange(of: viewModel.soundEnabled) { newValue in
                             // 直接保存设置，不调用toggleSoundEnabled，避免循环调用
                             UserDefaults.standard.set(newValue, forKey: "soundEnabled")
                         }

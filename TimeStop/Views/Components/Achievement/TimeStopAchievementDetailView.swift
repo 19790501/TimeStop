@@ -255,17 +255,6 @@ struct TimeStopAchievementDetailView: View {
         }
         .toolbarBackground(getHeaderColor(), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .gesture(
-            DragGesture()
-                .onEnded { gesture in
-                    if gesture.translation.width > 100 {
-                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let window = windowScene.windows.first {
-                            window.rootViewController?.dismiss(animated: true)
-                        }
-                    }
-                }
-        )
         .preferredColorScheme(themeManager.currentTheme == .classic ? .dark : .light)
         .onAppear {
             // 延迟动画以创建更好的效果

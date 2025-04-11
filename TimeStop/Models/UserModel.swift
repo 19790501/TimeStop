@@ -39,10 +39,20 @@ class UserModel: ObservableObject {
     
     @Published var achievementProgress: [AchievementType: Int] = [:]
     @Published var achievements: [AchievementBadge] = []
+    @Published var errorMessage: String?
+    @Published var hasError: Bool = false
     
     private let userDefaults = UserDefaults.standard
     private let achievementProgressKey = "achievementProgress"
     private let achievementsKey = "achievements"
+    
+    // Custom error types
+    enum UserModelError: Error {
+        case dataDecodingFailed(String)
+        case dataEncodingFailed(String)
+        case dataSavingFailed(String)
+        case dataLoadingFailed(String)
+    }
     
     init() {
         loadAchievementData()
@@ -51,7 +61,11 @@ class UserModel: ObservableObject {
     func addMinutes(_ minutes: Int, for type: AchievementType) {
         let currentMinutes = achievementProgress[type] ?? 0
         achievementProgress[type] = currentMinutes + minutes
-        save()
+        do {
+            try save()
+        } catch {
+            handleError(error)
+        }
     }
     
     func hasAchievement(type: AchievementType, level: Int) -> Bool {
@@ -61,29 +75,82 @@ class UserModel: ObservableObject {
     func addAchievement(_ badge: AchievementBadge) {
         if !hasAchievement(type: badge.type, level: badge.level) {
             achievements.append(badge)
-            save()
+            do {
+                try save()
+            } catch {
+                handleError(error)
+            }
         }
     }
     
     private func loadAchievementData() {
-        if let progressData = userDefaults.data(forKey: achievementProgressKey),
-           let progress = try? JSONDecoder().decode([AchievementType: Int].self, from: progressData) {
-            achievementProgress = progress
-        }
-        
-        if let achievementsData = userDefaults.data(forKey: achievementsKey),
-           let badges = try? JSONDecoder().decode([AchievementBadge].self, from: achievementsData) {
-            achievements = badges
+        do {
+            // Load achievement progress
+            if let progressData = userDefaults.data(forKey: achievementProgressKey) {
+                do {
+                    achievementProgress = try JSONDecoder().decode([AchievementType: Int].self, from: progressData)
+                } catch {
+                    throw UserModelError.dataDecodingFailed("Failed to decode achievement progress: \(error.localizedDescription)")
+                }
+            }
+            
+            // Load achievements
+            if let achievementsData = userDefaults.data(forKey: achievementsKey) {
+                do {
+                    achievements = try JSONDecoder().decode([AchievementBadge].self, from: achievementsData)
+                } catch {
+                    throw UserModelError.dataDecodingFailed("Failed to decode achievements: \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            handleError(error)
+            // Reset to default values on error
+            achievementProgress = [:]
+            achievements = []
         }
     }
     
-    func save() {
-        if let progressData = try? JSONEncoder().encode(achievementProgress) {
+    func save() throws {
+        do {
+            // Save achievement progress
+            let progressData = try JSONEncoder().encode(achievementProgress)
             userDefaults.set(progressData, forKey: achievementProgressKey)
-        }
-        
-        if let achievementsData = try? JSONEncoder().encode(achievements) {
+            
+            // Save achievements
+            let achievementsData = try JSONEncoder().encode(achievements)
             userDefaults.set(achievementsData, forKey: achievementsKey)
+            
+            // Verify data was saved correctly
+            if userDefaults.data(forKey: achievementProgressKey) == nil || 
+               userDefaults.data(forKey: achievementsKey) == nil {
+                throw UserModelError.dataSavingFailed("Failed to verify data was saved correctly")
+            }
+            
+            // Force UserDefaults to save to disk
+            userDefaults.synchronize()
+            
+            // Clear any previous errors
+            hasError = false
+            errorMessage = nil
+        } catch {
+            throw UserModelError.dataSavingFailed("Failed to save user data: \(error.localizedDescription)")
+        }
+    }
+    
+    private func handleError(_ error: Error) {
+        DispatchQueue.main.async {
+            self.hasError = true
+            self.errorMessage = error.localizedDescription
+            
+            // Log the error
+            print("UserModel Error: \(error.localizedDescription)")
+            
+            // Post notification about the error
+            NotificationCenter.default.post(
+                name: NSNotification.Name("UserModelError"),
+                object: nil,
+                userInfo: ["error": error]
+            )
         }
     }
     
@@ -151,7 +218,11 @@ class UserModel: ObservableObject {
         addAchievement(AchievementBadge(type: .relax, level: 2))
         
         // 保存测试数据
-        save()
+        do {
+            try save()
+        } catch {
+            handleError(error)
+        }
         
         print("成就系统测试数据已生成")
     }
@@ -174,7 +245,11 @@ class UserModel: ObservableObject {
             }
         }
         
-        save()
+        do {
+            try save()
+        } catch {
+            handleError(error)
+        }
         print("已生成所有成就类型的完整等级测试数据")
     }
     

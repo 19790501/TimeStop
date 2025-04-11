@@ -74,12 +74,12 @@ struct WelcomeView: View {
     
     // Animation timings
     private enum Constants {
-        static let animationDelay: Double = 0.2
-        static let quoteAnimationDuration: Double = 0.9
-        static let brandLogoAnimationDuration: Double = 1.5
+        static let animationDelay: Double = 0.1
+        static let quoteAnimationDuration: Double = 0.6
+        static let brandLogoAnimationDuration: Double = 1.0
         static let countdownTime: Int = 3
         static let countdownInterval: TimeInterval = 1.0
-        static let dismissAnimationDuration: Double = 0.5
+        static let dismissAnimationDuration: Double = 0.3
     }
     
     var body: some View {
@@ -116,8 +116,8 @@ struct WelcomeView: View {
     
     // 生成缓存元素 - 优化版本
     private func generateCachedElements() {
-        // 减少折射线元素数量，从7个减少到5个
-        cachedRefraction = (0..<5).map { _ in
+        // 减少折射线元素数量，从5个减少到3个
+        cachedRefraction = (0..<3).map { _ in
             RefractiveElement(
                 width: UIScreen.main.bounds.width * CGFloat.random(in: 0.5...1.2),
                 height: CGFloat.random(in: 0.5...1.5),
@@ -128,13 +128,13 @@ struct WelcomeView: View {
             )
         }
         
-        // 显著减少粒子元素数量，从100个减少到40个
-        cachedParticles = (0..<40).map { _ in
+        // 显著减少粒子元素数量，从40个减少到20个
+        cachedParticles = (0..<20).map { _ in
             ParticleElement(
-                size: CGFloat.random(in: 1...4),
+                size: CGFloat.random(in: 1...3), // 减小粒子大小范围
                 positionX: CGFloat.random(in: 0...UIScreen.main.bounds.width),
                 positionY: CGFloat.random(in: 0...UIScreen.main.bounds.height),
-                opacity: Double.random(in: 0.05...0.25)
+                opacity: Double.random(in: 0.1...0.2) // 降低粒子透明度
             )
         }
     }
@@ -166,7 +166,7 @@ struct WelcomeView: View {
             
             // Enhanced particle effect with light grains - 使用缓存元素
             OptimizedParticleEffect(particles: cachedParticles)
-                .foregroundColor(Color.white.opacity(0.3))
+                .foregroundColor(Color.white.opacity(0.2)) // 降低粒子整体透明度
                 .drawingGroup() // 使用Metal渲染以提高性能
         }
     }
@@ -177,7 +177,7 @@ struct WelcomeView: View {
             // 主要玻璃反光
             RadialGradient(
                 gradient: Gradient(colors: [
-                    Color.white.opacity(0.4),
+                    Color.white.opacity(0.3), // 降低反光强度
                     Color.white.opacity(0.0)
                 ]),
                 center: .topLeading,
@@ -190,7 +190,7 @@ struct WelcomeView: View {
             // 次要玻璃纹理
             RadialGradient(
                 gradient: Gradient(colors: [
-                    Color.white.opacity(0.2),
+                    Color.white.opacity(0.15), // 降低纹理强度
                     Color.white.opacity(0.0)
                 ]),
                 center: .bottomTrailing,
@@ -379,33 +379,33 @@ struct WelcomeView: View {
         cancelTimerSubscription()
         
         // 简化动画步骤，减少并行动画数量
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             withAnimation {
                 self.showQuote = true
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             withAnimation {
                 self.showEnglishTranslation = true
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation(.easeOut(duration: Constants.brandLogoAnimationDuration)) {
                 self.brandLogoOpacity = 1
                 self.brandLogoScale = 1
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.initialAnimationComplete = true
             withAnimation { 
                 self.showContent = true 
             }
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
             self.dismissWelcomeView()
         }
     }

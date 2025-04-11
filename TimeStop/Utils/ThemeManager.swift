@@ -199,12 +199,12 @@ class ThemeManager: ObservableObject {
             case .elegantPurple:
                 return ThemeColors(
                     primary: Color(hex: "8A2BE2"),     // 深紫色（主题色）
-                    secondary: Color(hex: "E6E6FA"),   // 淡紫色（辅助色）
+                    secondary: Color(hex: "D8BFD8"),   // 淡紫色（辅助色，从E6E6FA调深）
                     accent: Color(hex: "FFD700"),      // 金色（点缀色）
-                    background: Color(hex: "F5F0FF"),  // 淡雅白紫色背景（略调暗）
+                    background: Color(hex: "F0E6FF"),  // 淡雅白紫色背景（从F5F0FF调深）
                     secondaryBackground: Color.white,  // 纯白色（次要背景色）
                     text: Color(hex: "3A2A6D"),        // 暗紫色文本（更深）
-                    secondaryText: Color(hex: "8B8B9E"), // 灰紫色（次要文本色）
+                    secondaryText: Color(hex: "7A7A8E"), // 灰紫色（次要文本色，从8B8B9E调深）
                     buttonText: Color.white,           // 白色（按钮文本色）
                     buttonBackground: Color(hex: "7928CA") // 深紫色（按钮背景色，更鲜明）
                 )

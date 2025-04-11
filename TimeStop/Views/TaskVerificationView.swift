@@ -1517,7 +1517,31 @@ struct TaskVerificationView: View {
     
     // 获取文档目录
     private func getDocumentsDirectory() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        do {
+            // Using a more robust approach with error handling
+            let fileManager = FileManager.default
+            
+            // Try to get the documents directory with proper error handling
+            return try fileManager.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+        } catch {
+            // Log the error
+            print("Error accessing documents directory: \(error.localizedDescription)")
+            
+            // Notify about I/O error
+            NotificationCenter.default.post(
+                name: NSNotification.Name("DataOperationError"),
+                object: nil,
+                userInfo: ["error": error, "operation": "accessing documents directory"]
+            )
+            
+            // Fallback to the old method as a last resort
+            return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        }
     }
 }
 

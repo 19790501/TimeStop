@@ -100,6 +100,16 @@ class AchievementResetManager {
         for type in AchievementType.allCases {
             userModel.achievementProgress[type] = 0
         }
-        userModel.save()
+        do {
+            try userModel.save()
+        } catch {
+            print("Error saving achievement reset: \(error.localizedDescription)")
+            // 通知错误
+            NotificationCenter.default.post(
+                name: NSNotification.Name("AchievementResetError"),
+                object: nil,
+                userInfo: ["error": error]
+            )
+        }
     }
 }

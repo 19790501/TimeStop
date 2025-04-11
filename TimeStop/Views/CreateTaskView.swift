@@ -690,7 +690,7 @@ struct FavoriteTaskSetupView: View {
                             .foregroundColor(.white)
                             .background(Color.white.opacity(0.12))
                             .cornerRadius(10)
-                            .onChange(of: durationText) { oldValue, newValue in
+                            .onChange(of: durationText) { newValue in
                                 if let duration = Int(newValue), duration > 0 {
                                     localTask.duration = min(duration, 600)
                                     if duration > 600 {

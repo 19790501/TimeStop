@@ -459,12 +459,6 @@ struct TypeButton: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.5)
-                .onEnded { _ in
-                    showingDetail = true
-                }
-        )
         .sheet(isPresented: $showingDetail) {
             DetailView(type: type)
         }
@@ -664,14 +658,6 @@ struct TypeButton: View {
                 .toolbarBackground(Color.black, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .foregroundColor(.white)
-                .gesture(
-                    DragGesture()
-                        .onEnded { gesture in
-                            if gesture.translation.width > 100 {
-                                presentationMode.wrappedValue.dismiss()
-                            }
-                        }
-                )
             }
             .preferredColorScheme(.dark)
         }
