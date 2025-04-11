@@ -114,10 +114,10 @@ struct WelcomeView: View {
         .statusBar(hidden: true)
     }
     
-    // 生成缓存元素
+    // 生成缓存元素 - 优化版本
     private func generateCachedElements() {
-        // 生成折射线元素
-        cachedRefraction = (0..<7).map { _ in
+        // 减少折射线元素数量，从7个减少到5个
+        cachedRefraction = (0..<5).map { _ in
             RefractiveElement(
                 width: UIScreen.main.bounds.width * CGFloat.random(in: 0.5...1.2),
                 height: CGFloat.random(in: 0.5...1.5),
@@ -128,8 +128,8 @@ struct WelcomeView: View {
             )
         }
         
-        // 生成粒子元素
-        cachedParticles = (0..<100).map { _ in
+        // 显著减少粒子元素数量，从100个减少到40个
+        cachedParticles = (0..<40).map { _ in
             ParticleElement(
                 size: CGFloat.random(in: 1...4),
                 positionX: CGFloat.random(in: 0...UIScreen.main.bounds.width),

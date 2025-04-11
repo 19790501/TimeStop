@@ -285,7 +285,6 @@ class AppViewModel: ObservableObject {
             }
             
             currentUser = user
-        isAuthenticated = true
         }
         
         // 停止计时器
@@ -296,6 +295,9 @@ class AppViewModel: ObservableObject {
         
         // 保存数据
         saveUserData()
+        
+        // 发送任务完成通知
+        NotificationCenter.default.post(name: NSNotification.Name("TaskDidComplete"), object: nil)
     }
     
     func cancelTask() {
