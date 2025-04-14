@@ -713,52 +713,55 @@ struct TimeWhereView_test: View {
             // 标题区域 - 更精致的设计
             HStack {
                 Text("时间分配")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundColor(themeManager.colors.text)
                 
                 Spacer()
                 
-                Text("\(totalTimeForSelectedRange)分钟")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 8)
-                    .background(
-                        Capsule()
-                            .fill(themeManager.currentTheme == .elegantPurple ? 
-                                  Color(hex: "8A2BE2").opacity(0.9) : 
-                                  Color(hex: "0C4A45").opacity(0.9))
-                    )
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white)
+                    
+                    Text("\(totalTimeForSelectedRange)分钟")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .padding(.vertical, 3)
+                .padding(.horizontal, 8)
+                .background(
+                    Capsule()
+                        .fill(themeManager.currentTheme == .elegantPurple ? 
+                              Color(hex: "8A2BE2").opacity(0.9) : 
+                              Color(hex: "0C4A45").opacity(0.9))
+                )
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-            
-            // 分隔线
-            Rectangle()
-                .fill(themeManager.colors.secondaryText.opacity(0.1))
-                .frame(height: 1)
-                .padding(.horizontal, 14)
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
             
             // 时间分配内容
             let stats = getTaskTypesStats()
             
             if stats.isEmpty {
-                Text("暂无数据")
-                    .font(.system(size: 14))
-                    .foregroundColor(themeManager.colors.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
+                VStack {
+                    Text("暂无数据")
+                        .font(.system(size: 14))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 30)
+                }
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 18) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 10) {
                         ForEach(stats, id: \.type) { stat in
                             modernTimeCell(stat: stat)
                         }
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 18)
                     .padding(.vertical, 12)
                 }
+                .padding(.bottom, 10)
             }
         }
         .background(
@@ -1552,50 +1555,82 @@ struct TimeWhereView_test: View {
     
     // 添加现代感十足的时间单元格组件
     private func modernTimeCell(stat: TaskTypeStat) -> some View {
-        VStack(spacing: 6) {
-            // 图标容器 - 现代设计风格
-            ZStack {
-                // 黑色背景圆形 - 更现代的阴影设计
-                Circle()
-                    .fill(Color.black)
-                    .frame(width: 44, height: 44)
-                    .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 1)
+        let percentage = Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100
+        
+        return VStack(spacing: 6) {
+            // 顶部图标和百分比
+            HStack(alignment: .center, spacing: 12) {
+                // 图标容器 - 现代设计风格
+                ZStack {
+                    Circle()
+                        .fill(getColorForTaskType(stat.type))
+                        .frame(width: 38, height: 38)
+                        .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 1)
+                    
+                    // 图标
+                    Image(systemName: getIconForTaskType(stat.type))
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white)
+                }
                 
-                // 图标
-                Image(systemName: getIconForTaskType(stat.type))
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(.white)
+                VStack(alignment: .leading, spacing: 2) {
+                    // 任务类型和百分比
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(stat.type)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(themeManager.colors.text)
+                        
+                        Text(String(format: "%.1f%%", percentage))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(getColorForTaskType(stat.type))
+                    }
+                    
+                    // 微文案描述
+                    Text(getTaskTypeDescription(stat.type))
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                        .lineLimit(1)
+                }
+                .padding(.leading, 2)
+                
+                Spacer()
+                
+                // 时间显示
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(stat.minutes)分钟")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(themeManager.colors.text)
+                    
+                    if stat.count > 0 {
+                        Text("\(stat.count)次")
+                            .font(.system(size: 11))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                    }
+                }
             }
-            
-            // 任务类型名称 - 精致设计
-            Text(stat.type)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(themeManager.colors.text)
-                .lineLimit(1)
-            
-            // 时间值 - 更高对比度的设计
-            Text("\(stat.minutes)分钟")
-                .font(.system(size: 11, weight: .regular))
-                .foregroundColor(themeManager.colors.secondaryText)
-                
-            // 百分比显示 - 增加视觉层次感
-            let percentage = Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100
-            Text(String(format: "%.1f%%", percentage))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(
-                    themeManager.currentTheme == .elegantPurple ? 
-                    Color(hex: "8A2BE2") : Color(hex: "0C4A45")
-                )
-                .padding(.vertical, 2)
-                .padding(.horizontal, 6)
-                .background(
-                    Capsule()
-                        .fill((themeManager.currentTheme == .elegantPurple ? 
-                              Color(hex: "8A2BE2") : Color(hex: "0C4A45"))
-                              .opacity(0.1))
-                )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(themeManager.colors.secondaryBackground)
+                    .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+            )
         }
-        .padding(.vertical, 6)
+    }
+    
+    // 获取任务类型描述文案
+    private func getTaskTypeDescription(_ type: String) -> String {
+        switch type {
+        case "工作": return "专注创造价值"
+        case "思考": return "孵化创意"
+        case "会议": return "协作沟通"
+        case "阅读": return "知识积累"
+        case "运动": return "能量补充"
+        case "睡觉": return "恢复精力"
+        case "生活": return "放松心情"
+        case "摸鱼": return "创意休息"
+        default: return ""
+        }
     }
     
     // 获取详细建议
