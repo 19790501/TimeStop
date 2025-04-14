@@ -472,10 +472,7 @@ struct TimeWhereView_test: View {
     // 角色选择器
     private var roleSelector: some View {
         VStack(spacing: 8) {
-            Text("选择您的职业角色")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(themeManager.colors.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // 移除 "选择您的职业角色" 文字
             
             HStack(spacing: 8) {
                 ForEach(roleStandards, id: \.type) { role in
@@ -1917,16 +1914,10 @@ struct TimeWhereView_test: View {
     // 日期范围选择器（也做任务类型过滤器）
     private var dateRangeSelector: some View {
         VStack(spacing: 8) {
-            // 日期文本显示器
-            Text(getDateRangeText())
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.secondaryText)
-                .padding(.horizontal, 24)
-                .padding(.top, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // 移除日期文本显示器
             
             HStack {
-                Text("活动类型分配")
+                Text("时间分配")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(themeManager.colors.text)
                 
@@ -1959,28 +1950,6 @@ struct TimeWhereView_test: View {
                 }
             }
             .padding(.horizontal, 24)
-        }
-    }
-    
-    // 获取所选日期范围的文本描述
-    private func getDateRangeText() -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        
-        switch selectedRange {
-        case .today:
-            formatter.dateFormat = "yyyy年MM月dd日"
-            return "今日 | \(formatter.string(from: Date()))"
-        case .week:
-            let calendar = Calendar.current
-            let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-            let weekEnd = calendar.date(byAdding: .day, value: 6, to: weekStart)!
-            
-            formatter.dateFormat = "MM/dd"
-            return "本周 | \(formatter.string(from: weekStart)) - \(formatter.string(from: weekEnd))"
-        case .month:
-            formatter.dateFormat = "yyyy年MM月"
-            return "本月 | \(formatter.string(from: Date()))"
         }
     }
     
