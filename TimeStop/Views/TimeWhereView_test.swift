@@ -724,12 +724,12 @@ struct TimeWhereView_test: View {
     
     // 时间分配卡片
     private var timeDistributionCard: some View {
-        // 时间健康仪表盘卡片
+        // 时间健康仪表盘卡片 - 方案E样式
         VStack(alignment: .leading, spacing: 0) {
-            // 标题区域 - 保留原有设计
+            // 标题区域
             HStack {
                 Text("时间分配")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(themeManager.colors.text)
                 
                 Spacer()
@@ -737,8 +737,8 @@ struct TimeWhereView_test: View {
                 Text("\(totalTimeForSelectedRange)分钟")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white)
-                    .padding(.vertical, 3)
-                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 10)
                     .background(
                         Capsule()
                             .fill(themeManager.currentTheme == .elegantPurple ? 
@@ -746,17 +746,17 @@ struct TimeWhereView_test: View {
                                   Color(hex: "0C4A45").opacity(0.9))
                     )
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
             
             // 分隔线
             Rectangle()
                 .fill(themeManager.colors.secondaryText.opacity(0.1))
                 .frame(height: 1)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
             
-            // 时间分配内容 - 新的仪表盘风格
+            // 时间分配内容
             let stats = getTaskTypesStats()
             
             if stats.isEmpty {
@@ -766,118 +766,409 @@ struct TimeWhereView_test: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else {
-                VStack(spacing: 16) {
-                    // 健康度指标
-                    let healthScore = calculateHealthScore(stats)
-                    HStack {
-                        Text("时间分配健康度：")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(themeManager.colors.text)
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // 健康度指标 - 方案E风格
+                        timeHealthDashboard(stats)
+                            .padding(.top, 16)
                         
-                        Text("\(healthScore)/100")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(healthScoreColor(healthScore))
+                        // 分隔线
+                        Rectangle()
+                            .fill(themeManager.colors.secondaryText.opacity(0.1))
+                            .frame(height: 1)
+                            .padding(.horizontal, 16)
                         
-                        Text(healthScoreSymbol(healthScore))
-                            .font(.system(size: 14))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
-                    
-                    // 任务类型列表
-                    ScrollView {
-                        VStack(spacing: 12) {
+                        // 任务类型列表标题
+                        HStack {
+                            Text("任务分配详情")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(themeManager.colors.text)
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                        
+                        // 任务类型列表 - 增强版健康状态卡片
+                        VStack(spacing: 16) {
                             ForEach(stats, id: \.type) { stat in
-                                timeAllocationRow(stat: stat)
+                                enhancedTimeAllocationRow(stat: stat)
+                                    .padding(.horizontal, 16)
+                                
+                                if stats.last?.type != stat.type {
+                                    Rectangle()
+                                        .fill(themeManager.colors.secondaryText.opacity(0.08))
+                                        .frame(height: 1)
+                                        .padding(.horizontal, 16)
+                                }
                             }
                         }
-                        .padding(.horizontal, 14)
+                        .padding(.bottom, 20)
                     }
-                    .frame(height: min(CGFloat(stats.count) * 42 + 20, 250))
-                    
-                    // 任务调整分析
-                    taskAdjustmentAnalysisView(stats: stats)
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 16)
                 }
+                .frame(maxHeight: 500)
             }
         }
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(themeManager.colors.secondaryBackground)
-                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 3)
         )
     }
     
-    // 时间分配行视图
-    private func timeAllocationRow(stat: TaskTypeStat) -> some View {
-        let percentage = Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100
-        let timeStandard = currentRoleStandard.getStandard(for: stat.type)
-        let hoursSpent = Double(stat.minutes) / 60.0
-        
-        // 计算健康分数
-        let healthScore = calculateHealthScore(for: [stat])
-        
-        // 获取时间状态
-        let timeStatus = getTimeStatus(for: stat.type, actualPercentage: percentage)
-        
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 16) {
-                // 左侧：任务类型图标
-                Image(systemName: getIconForTaskType(stat.type))
-                    .font(.system(size: 14))
-                    .foregroundColor(.white)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        Circle()
-                            .fill(Color.black)
-                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                    )
-                
-                // 右侧：任务类型和时间信息
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(stat.type)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(themeManager.colors.text)
-                    
-                    HStack(spacing: 3) {
-                        Text("\(percentage, specifier: "%.1f")%")
-                            .font(.system(size: 12, weight: .semibold))
+    // 时间健康仪表盘 - 方案E主要组件
+    private func timeHealthDashboard(_ stats: [TaskTypeStat]) -> some View {
+        VStack(alignment: .leading, spacing: 15) {
+            // 顶部健康度指标
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("时间健康度")
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(themeManager.colors.text)
                         
-                        Text("(\(hoursSpent, specifier: "%.1f")小时)")
-                            .font(.system(size: 10))
+                        Text("基于当前角色标准评估")
+                            .font(.system(size: 11))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                    }
+                    
+                    Spacer()
+                    
+                    let healthScore = calculateHealthScore(stats)
+                    
+                    ZStack {
+                        Circle()
+                            .fill(healthScoreColor(healthScore).opacity(0.15))
+                            .frame(width: 46, height: 46)
+                        
+                        Circle()
+                            .trim(from: 0, to: min(CGFloat(healthScore) / 100, 1.0))
+                            .stroke(healthScoreColor(healthScore), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                            .frame(width: 40, height: 40)
+                            .rotationEffect(.degrees(-90))
+                        
+                        VStack(spacing: 0) {
+                            Text("\(Int(healthScore))")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(healthScoreColor(healthScore))
+                        }
+                    }
+                }
+                
+                // 健康度评分条
+                ZStack(alignment: .leading) {
+                    // 背景层
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(height: 12)
+                    
+                    // 得分层
+                    let healthScore = calculateHealthScore(stats)
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(healthScoreColor(healthScore))
+                        .frame(width: max(5, UIScreen.main.bounds.width * 0.85 * CGFloat(healthScore) / 100), height: 12)
+                    
+                    // 得分区间标记
+                    HStack(spacing: 0) {
+                        ForEach(0..<3) { i in
+                            Rectangle()
+                                .fill(Color.white.opacity(0.5))
+                                .frame(width: 1, height: 8)
+                                .offset(x: UIScreen.main.bounds.width * 0.85 * CGFloat((i + 1) * 25) / 100)
+                        }
+                    }
+                }
+                
+                // 健康度评价
+                HStack {
+                    let healthScore = calculateHealthScore(stats)
+                    Text(getHealthScoreEvaluation(healthScore))
+                        .font(.system(size: 13))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    Spacer()
+                    
+                    Text(healthScoreSymbol(healthScore))
+                        .font(.system(size: 18))
+                        .padding(.trailing, 4)
+                }
+            }
+            .padding(.horizontal, 16)
+            
+            // 核心指标
+            VStack(alignment: .leading, spacing: 8) {
+                Text("核心指标")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(themeManager.colors.text)
+                    .padding(.horizontal, 16)
+                
+                HStack(spacing: 12) {
+                    // 工作效率指标
+                    metricCard(
+                        title: "工作效率",
+                        value: calculateWorkEfficiencyIndex(stats),
+                        icon: "briefcase.fill",
+                        color: Color.blue
+                    )
+                    
+                    // 生活平衡指标
+                    metricCard(
+                        title: "生活平衡",
+                        value: calculateLifeBalanceIndex(stats),
+                        icon: "heart.fill",
+                        color: Color.pink
+                    )
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    // 指标卡片
+    private func metricCard(title: String, value: Int, icon: String, color: Color) -> some View {
+        HStack(spacing: 8) {
+            // 图标
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundColor(.white)
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(color)
+                )
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(themeManager.colors.secondaryText)
+                
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text("\(value)")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(themeManager.colors.text)
+                    
+                    Text("/100")
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                }
+            }
+            
+            Spacer()
+            
+            // 评分标识
+            ZStack {
+                Circle()
+                    .fill(getMetricStatusColor(value).opacity(0.15))
+                    .frame(width: 24, height: 24)
+                
+                Text(getMetricStatusSymbol(value))
+                    .font(.system(size: 12))
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(themeManager.colors.background.opacity(0.5))
+                .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
+        )
+    }
+    
+    // 增强版时间分配行
+    private func enhancedTimeAllocationRow(stat: TaskTypeStat) -> some View {
+        let percentage = Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100
+        let idealPercentage = getIdealPercentage(for: stat.type)
+        let hoursSpent = Double(stat.minutes) / 60.0
+        let timeStatus = getTimeStatus(for: stat.type, actualPercentage: percentage)
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            // 任务类型标题区域
+            HStack(alignment: .center) {
+                // 任务图标和名称
+                HStack(spacing: 10) {
+                    Image(systemName: getIconForTaskType(stat.type))
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(getTaskTypeColor(stat.type))
+                                .shadow(color: getTaskTypeColor(stat.type).opacity(0.3), radius: 2, x: 0, y: 1)
+                        )
+                    
+                    Text(stat.type)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(themeManager.colors.text)
+                }
+                
+                Spacer()
+                
+                // 健康状态标签
+                HStack(spacing: 4) {
+                    Text(getStatusDescription(status: timeStatus))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(
+                            Capsule()
+                                .fill(getStatusColor(status: timeStatus).opacity(0.9))
+                        )
+                }
+            }
+            
+            // 时间详情区域
+            HStack(spacing: 16) {
+                // 实际时间
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("实际")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                    
+                    HStack(alignment: .firstTextBaseline, spacing: 1) {
+                        Text("\(hoursSpent, specifier: "%.1f")")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(themeManager.colors.text)
+                        
+                        Text("小时")
+                            .font(.system(size: 11))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                    }
+                }
+                
+                // 理想时间
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("理想")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                    
+                    let idealHours = Double(totalTimeForSelectedRange) * idealPercentage / 100 / 60
+                    HStack(alignment: .firstTextBaseline, spacing: 1) {
+                        Text("\(idealHours, specifier: "%.1f")")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                        
+                        Text("小时")
+                            .font(.system(size: 11))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                    }
+                }
+                
+                Spacer()
+                
+                // 百分比信息
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("占比")
+                        .font(.system(size: 11))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                    
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text("\(percentage, specifier: "%.1f")")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(themeManager.colors.text)
+                        
+                        Text("%")
+                            .font(.system(size: 11))
                             .foregroundColor(themeManager.colors.secondaryText)
                     }
                 }
             }
             
-            // 健康分数和时间状态
-            HStack(alignment: .center, spacing: 16) {
-                Text("\(healthScore, specifier: "%.1f")%")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(healthScoreColor(healthScore))
+            // 进度条区域
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack(alignment: .leading) {
+                    // 背景条
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(height: 10)
+                    
+                    // 实际时间条
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(getStatusColor(status: timeStatus))
+                        .frame(width: max(4, UIScreen.main.bounds.width * 0.8 * CGFloat(percentage) / 100), height: 10)
+                    
+                    // 理想时间标记线
+                    if idealPercentage > 0 {
+                        Rectangle()
+                            .fill(Color.white)
+                            .frame(width: 2, height: 15)
+                            .offset(x: UIScreen.main.bounds.width * 0.8 * CGFloat(idealPercentage) / 100 - 1, y: -2)
+                    }
+                }
                 
-                Text(healthScoreSymbol(healthScore))
-                    .font(.system(size: 14))
+                // 建议信息
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(getStatusColor(status: timeStatus).opacity(0.7))
+                    
+                    Text(getEnhancedSuggestionText(for: stat.type, status: timeStatus))
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                    
+                    Spacer()
+                }
             }
-            
-            // 时间状态
-            Text(timeStatus.localizedDescription)
-                .font(.system(size: 12))
-                .foregroundColor(getStatusColor(status: timeStatus))
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
+    }
+    
+    // 增强版建议文本
+    private func getEnhancedSuggestionText(for taskType: String, status: TimeStatus) -> String {
+        let roleName = currentRoleStandard.type
+        
+        switch (taskType, status) {
+        case ("工作", .overTime):
+            return "作为\(roleName)，工作时间过长。建议：减少20%的工作量，增加休息频率，关注效率而非时长。"
+        case ("工作", .underTime):
+            return "作为\(roleName)，工作时间不足。建议：使用番茄工作法，设置集中工作时段，减少干扰因素。"
+        case ("会议", .overTime):
+            return "作为\(roleName)，会议占用时间过多。建议：控制会议时长，明确议程，减少非必要参与者。"
+        case ("会议", .underTime):
+            return "作为\(roleName)，会议时间适中。建议：维持良好的沟通效率，确保会议成果及时落实。"
+        case ("思考", .overTime):
+            return "作为\(roleName)，思考时间充足。建议：多产出实际成果，将思考转化为行动计划或文档。"
+        case ("思考", .underTime):
+            return "作为\(roleName)，思考时间不足。建议：每日安排15-30分钟独处思考时间，避免过度执行而缺乏规划。"
+        case ("阅读", .overTime):
+            return "作为\(roleName)，阅读时间充足。建议：关注阅读效率，选择更聚焦的材料，应用所学到实际工作中。"
+        case ("阅读", .underTime):
+            return "作为\(roleName)，阅读时间不足。建议：每日安排固定阅读时段，选择对角色发展有帮助的专业书籍。"
+        case ("生活", .overTime):
+            return "作为\(roleName)，生活事务占用时间较多。建议：优化生活流程，考虑外包部分家务，提高效率。"
+        case ("生活", .underTime):
+            return "作为\(roleName)，生活事务时间合理。建议：保持当前平衡，确保生活质量不受工作影响。"
+        case ("运动", .overTime):
+            return "作为\(roleName)，运动时间充足。建议：保持当前运动习惯，可以适当提高运动强度以获得更好效果。"
+        case ("运动", .underTime):
+            return "作为\(roleName)，运动时间不足。建议：每日至少安排30分钟运动，可分散为短时间高强度间歇训练。"
+        case ("摸鱼", .overTime):
+            return "作为\(roleName)，休闲时间过多。建议：将部分休闲时间转化为学习或创造性活动，增加高质量休闲内容。"
+        case ("摸鱼", .underTime):
+            return "作为\(roleName)，休闲时间适中。建议：保持当前平衡，确保休闲活动能够有效缓解压力。"
+        case ("睡觉", .overTime):
+            return "作为\(roleName)，睡眠时间充足。建议：保持规律作息，关注睡眠质量，避免过度睡眠导致的倦怠感。"
+        case ("睡觉", .underTime):
+            return "作为\(roleName)，睡眠时间不足。建议：保证7-8小时高质量睡眠，建立睡前仪式，避免使用电子设备。"
+        case (_, .normal):
+            return "作为\(roleName)，您的\(taskType)时间分配非常合理。建议：继续保持当前节奏，适时微调以适应工作生活变化。"
+        default:
+            return "请根据\(roleName)角色标准，合理调整\(taskType)的时间分配，保持生活与工作的平衡。"
+        }
     }
     
     // 计算健康分数
-    private func calculateHealthScore(for taskStats: [TaskTypeStat]) -> Double {
-        guard !taskStats.isEmpty else { return 0 }
+    private func calculateHealthScore(_ stats: [TaskTypeStat]) -> Double {
+        guard !stats.isEmpty else { return 0 }
         
         var totalDeviation: Double = 0
         var totalWeight: Double = 0
         
-        for stat in taskStats {
+        for stat in stats {
             let idealPercentage = getIdealPercentage(for: stat.type)
             let actualPercentage = stat.percentage
             
@@ -912,37 +1203,53 @@ struct TimeWhereView_test: View {
     }
     
     // 获取各类任务的理想百分比
-    private func getIdealPercentage(for taskType: TaskType) -> Double {
+    private func getIdealPercentage(for taskType: String) -> Double {
+        // 根据当前角色标准获取理想百分比
+        if let standard = currentRoleStandard.getStandard(for: taskType) {
+            // 计算每日理想小时数的中间值，转换为百分比
+            let avgHours = (standard.lowerBound + standard.upperBound) / 2
+            return (avgHours / 24) * 100
+        }
+        
+        // 默认百分比（如果未在角色标准中定义）
         switch taskType {
-        case .work:
-            return 35.0
-        case .study:
-            return 15.0
-        case .rest:
+        case "工作":
             return 30.0
-        case .social:
+        case "会议":
             return 10.0
-        case .entertainment:
-            return 7.0
-        case .other:
-            return 3.0
+        case "思考":
+            return 5.0
+        case "阅读":
+            return 5.0
+        case "生活":
+            return 10.0
+        case "运动":
+            return 5.0
+        case "摸鱼":
+            return 5.0
+        case "睡觉":
+            return 30.0
+        default:
+            return 5.0
         }
     }
     
     // 判断任务时间状态
-    private func getTimeStatus(for taskType: TaskType, actualPercentage: Double) -> TimeStatus {
+    private func getTimeStatus(for taskType: String, actualPercentage: Double) -> TimeStatus {
         let idealPercentage = getIdealPercentage(for: taskType)
         let tolerance: Double
         
         // 根据不同任务类型设置不同容忍度
         switch taskType {
-        case .work, .study:
+        case "工作", "会议":
             tolerance = 7.0
-        case .rest:
+        case "睡觉":
             tolerance = 5.0
-        case .social, .entertainment:
+        case "思考", "阅读":
             tolerance = 3.0
-        case .other:
+        case "生活", "运动", "摸鱼":
+            tolerance = 4.0
+        default:
             tolerance = 2.0
         }
         
@@ -955,104 +1262,112 @@ struct TimeWhereView_test: View {
         }
     }
     
-    // 根据任务状态获取建议文本
-    private func getSuggestionText(for taskType: TaskType, status: TimeStatus) -> String {
-        switch (taskType, status) {
-        case (.work, .overTime):
-            return "工作时间过长，建议适当减少工作时间，增加休息。"
-        case (.work, .underTime):
-            return "工作时间不足，可能影响工作效率和进度。"
-        case (.study, .overTime):
-            return "学习时间过长，注意适当休息以保持学习效率。"
-        case (.study, .underTime):
-            return "学习时间较少，建议增加学习时间以提升知识和技能。"
-        case (.rest, .overTime):
-            return "休息时间充足，但可能占用了其他活动的时间。"
-        case (.rest, .underTime):
-            return "休息时间不足，容易导致疲劳和效率下降，建议增加休息。"
-        case (.social, .overTime):
-            return "社交时间较多，适当减少可以为其他活动腾出时间。"
-        case (.social, .underTime):
-            return "社交时间较少，适当增加社交活动有助于保持心理健康。"
-        case (.entertainment, .overTime):
-            return "娱乐时间较多，可能影响工作和学习，建议适当控制。"
-        case (.entertainment, .underTime):
-            return "娱乐时间较少，适当增加有助于放松心情，提高生活质量。"
-        case (.other, .overTime):
-            return "其他活动占用时间较多，考虑是否需要重新规划时间。"
-        case (.other, .underTime):
-            return "其他活动时间较少，符合预期。"
-        case (_, .normal):
-            return "时间分配合理，继续保持！"
+    // 计算工作效率指标 (0-100)
+    private func calculateWorkEfficiencyIndex(_ stats: [TaskTypeStat]) -> Int {
+        // 提取工作相关类型
+        let workRelatedTypes = ["工作", "会议", "思考"]
+        let workTasks = stats.filter { workRelatedTypes.contains($0.type) }
+        
+        if workTasks.isEmpty {
+            return 0
         }
+        
+        // 基础分数 - 根据工作时间占比计算基础分
+        let totalWorkTime = workTasks.reduce(0) { $0 + $1.minutes }
+        let workPercentage = Double(totalWorkTime) / Double(totalTimeForSelectedRange) * 100
+        
+        // 理想工作占比根据角色确定
+        var idealWorkPercentage: Double = 0
+        if let workStandard = currentRoleStandard.getStandard(for: "工作") {
+            idealWorkPercentage = ((workStandard.lowerBound + workStandard.upperBound) / 2) * 100 / 24
+        } else {
+            idealWorkPercentage = 30 // 默认值
+        }
+        
+        // 计算工作时间偏差得分 (0-50分)
+        let deviationPercentage = abs(workPercentage - idealWorkPercentage)
+        let timeScore = max(0, 50 - (deviationPercentage * 50 / idealWorkPercentage))
+        
+        // 调整得分 - 考虑终止的任务和时间调整情况 (0-50分)
+        var adjustmentScore: Double = 50
+        let workStats = workTasks.filter { $0.type == "工作" }
+        if !workStats.isEmpty {
+            let terminatedRatio = Double(workStats.first?.terminatedCount ?? 0) / Double(workStats.first?.count ?? 1)
+            let adjustmentRatio = abs(Double(workStats.first?.adjustmentMinutes ?? 0)) / Double(workStats.first?.originalMinutes ?? 1)
+            
+            // 终止任务越多，调整时间越大，得分越低
+            adjustmentScore = max(0, 50 - (terminatedRatio * 25) - (adjustmentRatio * 25))
+        }
+        
+        return Int(timeScore + adjustmentScore)
     }
     
-    // 获取时间状态对应的颜色
-    private func getStatusColor(status: TimeStatus) -> Color {
-        switch status {
-        case .overTime:
-            return Color.red
-        case .normal:
-            return Color.green
-        case .underTime:
-            return Color.orange
+    // 计算生活平衡指标 (0-100)
+    private func calculateLifeBalanceIndex(_ stats: [TaskTypeStat]) -> Int {
+        // 提取生活相关类型
+        let lifeRelatedTypes = ["生活", "运动", "摸鱼", "睡觉"]
+        let lifeTasks = stats.filter { lifeRelatedTypes.contains($0.type) }
+        
+        if lifeTasks.isEmpty {
+            return 0
         }
+        
+        // 计算生活时间占比
+        let totalLifeTime = lifeTasks.reduce(0) { $0 + $1.minutes }
+        let lifePercentage = Double(totalLifeTime) / Double(totalTimeForSelectedRange) * 100
+        
+        // 理想生活占比
+        var idealLifePercentage: Double = 0
+        // 计算理想比例 - 基于角色标准汇总
+        for type in lifeRelatedTypes {
+            if let standard = currentRoleStandard.getStandard(for: type) {
+                idealLifePercentage += ((standard.lowerBound + standard.upperBound) / 2) * 100 / 24
+            }
+        }
+        if idealLifePercentage == 0 {
+            idealLifePercentage = 50 // 默认值
+        }
+        
+        // 计算生活时间平衡得分 (0-60分)
+        let deviationPercentage = abs(lifePercentage - idealLifePercentage)
+        let balanceScore = max(0, 60 - (deviationPercentage * 60 / idealLifePercentage))
+        
+        // 计算生活类型多样性得分 (0-40分)
+        let typeCount = lifeTasks.count
+        let diversityScore = min(40, Double(typeCount) * 10)
+        
+        return Int(balanceScore + diversityScore)
     }
     
-    // 获取任务类型图标
-    private func getIconForTaskType(_ type: TaskType) -> String {
-        switch type {
-        case .work: return "briefcase.fill"
-        case .study: return "book.fill"
-        case .exercise: return "figure.run"
-        case .entertainment: return "play.fill"
-        case .social: return "person.2.fill"
-        case .rest: return "bed.double.fill"
-        case .other: return "ellipsis.circle.fill"
-        }
-    }
-    
-    // 获取任务类型名称
-    private func getTaskTypeName(_ type: TaskType) -> String {
-        switch type {
-        case .work: return "工作"
-        case .study: return "学习"
-        case .exercise: return "运动"
-        case .entertainment: return "娱乐"
-        case .social: return "社交"
-        case .rest: return "休息"
-        case .other: return "其他"
-        }
-    }
-    
-    // 获取任务类型颜色
-    private func getTaskTypeColor(_ type: TaskType) -> Color {
-        switch type {
-        case .work: return Color(hex: "0066CC")
-        case .study: return Color(hex: "6E75A8")
-        case .exercise: return Color(hex: "FF9500")
-        case .entertainment: return Color(hex: "FF2D55")
-        case .social: return Color(hex: "5856D6")
-        case .rest: return Color(hex: "34C759")
-        case .other: return Color(hex: "8E8E93")
-        }
-    }
-    
-    // 健康分数颜色
-    private func healthScoreColor(_ score: Double) -> Color {
-        switch score {
+    // 获取指标状态颜色
+    private func getMetricStatusColor(_ value: Int) -> Color {
+        switch value {
         case 0..<40:
             return .red
-        case 40..<70:
+        case 40..<60:
             return .orange
-        case 70..<90:
+        case 60..<80:
             return .yellow
         default:
             return .green
         }
     }
-
-    // 健康分数对应的表情符号
+    
+    // 获取指标状态符号
+    private func getMetricStatusSymbol(_ value: Int) -> String {
+        switch value {
+        case 0..<40:
+            return "!"
+        case 40..<60:
+            return "?"
+        case 60..<80:
+            return "✓"
+        default:
+            return "★"
+        }
+    }
+    
+    // 获取健康分数对应的表情符号
     private func healthScoreSymbol(_ score: Double) -> String {
         switch score {
         case 0..<40:
