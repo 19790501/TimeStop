@@ -8,12 +8,12 @@ struct TimeAnalysisSummary {
     var taskCount: Int = 0
     var avgDuration: Int = 0
     
-    // 时间过多/过少分析
+    // 时间分配分析
     var overAllocatedTypes: [(type: String, minutes: Int)] = []
     var underAllocatedTypes: [(type: String, minutes: Int)] = []
 }
 
-// 确保可以访问ThemeManager中定义的AppColors
+// 时间分配视图
 struct TimeWhereView: View {
     @EnvironmentObject var userModel: UserModel
     @EnvironmentObject var themeManager: ThemeManager
@@ -31,7 +31,6 @@ struct TimeWhereView: View {
     @State private var selectedRange: TimeRange = .today
     @State private var showTaskDetail: Bool = false
     @State private var selectedTaskType: String?
-    @State private var currentTaskType = ""
     
     // 获取当前范围内的所有任务
     private func getTasksForSelectedRange() -> [Task] {
