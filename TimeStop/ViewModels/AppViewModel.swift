@@ -178,69 +178,65 @@ class AppViewModel: ObservableObject {
         }
         
         // Simulate loading user data from UserDefaults or other storage
-        do {
-            if let savedUser = UserDefaults.standard.data(forKey: "currentUser") {
-                do {
-                    let decoder = JSONDecoder()
-                    currentUser = try decoder.decode(User.self, from: savedUser)
-                    isAuthenticated = currentUser != nil
-                } catch {
-                    logError(error, "decoding user data")
-                    
-                    // Attempt data recovery
-                    if let backupPath = getBackupPath(for: "currentUser"),
-                       let backupData = try? Data(contentsOf: backupPath) {
-                        do {
-                            currentUser = try JSONDecoder().decode(User.self, from: backupData)
-                            isAuthenticated = currentUser != nil
-                            print("Successfully recovered user data from backup")
-                        } catch {
-                            logError(error, "recovering user data from backup")
-                        }
+        if let savedUser = UserDefaults.standard.data(forKey: "currentUser") {
+            do {
+                let decoder = JSONDecoder()
+                currentUser = try decoder.decode(User.self, from: savedUser)
+                isAuthenticated = currentUser != nil
+            } catch {
+                logError(error, "decoding user data")
+                
+                // Attempt data recovery
+                if let backupPath = getBackupPath(for: "currentUser"),
+                   let backupData = try? Data(contentsOf: backupPath) {
+                    do {
+                        currentUser = try JSONDecoder().decode(User.self, from: backupData)
+                        isAuthenticated = currentUser != nil
+                        print("Successfully recovered user data from backup")
+                    } catch {
+                        logError(error, "recovering user data from backup")
                     }
                 }
             }
-            
-            // Load tasks
-            if let savedTasks = UserDefaults.standard.data(forKey: "tasks") {
-                do {
-                    let decoder = JSONDecoder()
-                    tasks = try decoder.decode([Task].self, from: savedTasks)
-                } catch {
-                    logError(error, "decoding tasks data")
-                    
-                    // Attempt data recovery
-                    if let backupPath = getBackupPath(for: "tasks"),
-                       let backupData = try? Data(contentsOf: backupPath) {
-                        do {
-                            tasks = try JSONDecoder().decode([Task].self, from: backupData)
-                            print("Successfully recovered tasks data from backup")
-                        } catch {
-                            logError(error, "recovering tasks data from backup")
-                        }
+        }
+        
+        // Load tasks
+        if let savedTasks = UserDefaults.standard.data(forKey: "tasks") {
+            do {
+                let decoder = JSONDecoder()
+                tasks = try decoder.decode([Task].self, from: savedTasks)
+            } catch {
+                logError(error, "decoding tasks data")
+                
+                // Attempt data recovery
+                if let backupPath = getBackupPath(for: "tasks"),
+                   let backupData = try? Data(contentsOf: backupPath) {
+                    do {
+                        tasks = try JSONDecoder().decode([Task].self, from: backupData)
+                        print("Successfully recovered tasks data from backup")
+                    } catch {
+                        logError(error, "recovering tasks data from backup")
                     }
                 }
             }
-            
-            // Load sound settings with validation
-            if let soundEnabledValue = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool {
-                soundEnabled = soundEnabledValue
-            } else {
-                // Set default and log the issue
-                soundEnabled = true
-                print("Sound setting not found, using default value")
-            }
-            
-            // Load vibration settings with validation
-            if let vibrationEnabledValue = UserDefaults.standard.object(forKey: "vibrationEnabled") as? Bool {
-                vibrationEnabled = vibrationEnabledValue
-            } else {
-                // Set default and log the issue
-                vibrationEnabled = true
-                print("Vibration setting not found, using default value")
-            }
-        } catch {
-            logError(error, "general data loading")
+        }
+        
+        // Load sound settings with validation
+        if let soundEnabledValue = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool {
+            soundEnabled = soundEnabledValue
+        } else {
+            // Set default and log the issue
+            soundEnabled = true
+            print("Sound setting not found, using default value")
+        }
+        
+        // Load vibration settings with validation
+        if let vibrationEnabledValue = UserDefaults.standard.object(forKey: "vibrationEnabled") as? Bool {
+            vibrationEnabled = vibrationEnabledValue
+        } else {
+            // Set default and log the issue
+            vibrationEnabled = true
+            print("Vibration setting not found, using default value")
         }
         
         updateStatistics(with: tasks)
@@ -421,7 +417,60 @@ class AppViewModel: ObservableObject {
     }
     
     func cancelTask() {
+        // 检查是否有活动任务
+        guard let task = activeTask else {
+            stopTimer()
+            timeRemaining = 0
+            return
+        }
+        
+        // 计算已经过的时间
+        let originalDurationInSeconds = task.duration * 60
+        let elapsedSeconds = originalDurationInSeconds - timeRemaining
+        let elapsedMinutes = max(1, Int(elapsedSeconds / 60)) // 至少记录1分钟
+        
+        // 如果已经过了一定时间，才记录为终止的任务
+        if elapsedMinutes >= 1 {
+            var terminatedTask = task
+            
+            // 使用实际花费的时间作为任务持续时间
+            terminatedTask.duration = elapsedMinutes
+            
+            // 计算减少的时间（原始时间 - 实际花费时间）
+            let reducedTime = task.duration - elapsedMinutes
+            
+            // 添加负的时间调整记录，表示减少的时间
+            if reducedTime > 0 {
+                terminatedTask.timeAdjustments.append(-reducedTime)
+            }
+            
+            // 标记为终止任务
+            terminatedTask.isTerminated = true
+            
+            // 设置完成时间为当前时间
+            terminatedTask.completedAt = Date()
+            
+            // 保存终止的任务
+            tasks.append(terminatedTask)
+            
+            // 更新用户完成任务统计（即使是终止的任务也算作完成）
+            if var user = currentUser {
+                user.completedTasks += 1
+                user.totalFocusTime += elapsedMinutes // 只计算实际花费的时间
+                currentUser = user
+            }
+            
+            // 保存数据
+            saveUserData()
+            
+            // 可以添加日志，便于调试
+            print("任务终止: \(task.title), 原时长: \(task.duration)分钟, 实际用时: \(elapsedMinutes)分钟, 减少: \(reducedTime)分钟")
+        }
+        
+        // 停止计时器
         stopTimer()
+        
+        // 清除当前任务
         activeTask = nil
         timeRemaining = 0
     }
@@ -460,10 +509,24 @@ class AppViewModel: ObservableObject {
     func updateTaskTime(by minutes: Int) {
         timeRemaining = max(0, timeRemaining + (minutes * 60))
         
-        // 如果任务存在，更新其持续时间
+        // 如果任务存在，更新其持续时间并记录时间调整
         if var task = activeTask {
+            // 更新持续时间
             task.duration = max(0, task.duration + minutes)
+            
+            // 记录时间调整，仅当调整值不为0时
+            if minutes != 0 {
+                task.timeAdjustments.append(minutes)
+                
+                // 可以在这里添加日志，便于调试
+                print("任务时间调整: \(minutes)分钟，原始时间: \(task.originalDuration())分钟，当前时间: \(task.duration)分钟")
+            }
+            
+            // 更新活动任务
             activeTask = task
+            
+            // 保存更改
+            saveUserData()
         }
     }
     

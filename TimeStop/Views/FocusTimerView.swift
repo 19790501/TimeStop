@@ -9,10 +9,30 @@ struct FocusTimerView: View {
     @EnvironmentObject var navigationManager: NavigationManager
     @State private var isShowingTimeAdjustment = false
     @State private var isShowingTaskList = false
+    @State private var showTerminationAlert = false // 添加终止任务确认对话框状态
     
     private var progress: Double {
         guard let task = viewModel.activeTask else { return 0 }
         return Double(viewModel.timeRemaining) / (Double(task.duration) * 60.0)
+    }
+    
+    // 计算已经过的时间（用于终止任务提示）
+    private var elapsedTimeString: String {
+        guard let task = viewModel.activeTask else { return "0分钟" }
+        let totalSeconds = task.duration * 60
+        let elapsedSeconds = totalSeconds - viewModel.timeRemaining
+        let elapsedMinutes = max(1, Int(elapsedSeconds / 60))
+        return "\(elapsedMinutes)分钟"
+    }
+    
+    // 计算减少的时间（用于终止任务提示）
+    private var reducedTimeString: String {
+        guard let task = viewModel.activeTask else { return "0分钟" }
+        let totalMinutes = task.duration
+        let elapsedSeconds = (task.duration * 60) - viewModel.timeRemaining
+        let elapsedMinutes = max(1, Int(elapsedSeconds / 60))
+        let reducedMinutes = totalMinutes - elapsedMinutes
+        return reducedMinutes > 0 ? "\(reducedMinutes)分钟" : "0分钟"
     }
     
     // 计时器是否已结束或即将结束(剩余10秒)
@@ -269,14 +289,30 @@ struct FocusTimerView: View {
                         // 底部按钮
                         HStack(spacing: 20) {
                             Button(action: {
-                                // 取消当前任务并返回主页
-                                viewModel.playCancelSound() // 播放取消音效
-                                viewModel.cancelTask()
-                                dismiss()
+                                // 显示确认对话框
+                                if let task = viewModel.activeTask {
+                                    let elapsedSeconds = task.duration * 60 - viewModel.timeRemaining
+                                    let elapsedMinutes = max(1, Int(elapsedSeconds / 60))
+                                    
+                                    // 只有当经过了一定时间时才提示
+                                    if elapsedMinutes > 1 {
+                                        showTerminationAlert = true
+                                    } else {
+                                        // 如果几乎没有经过时间，直接取消
+                                        viewModel.playCancelSound() // 播放取消音效
+                                        viewModel.cancelTask()
+                                        dismiss()
+                                    }
+                                } else {
+                                    // 如果没有活动任务，直接取消
+                                    viewModel.playCancelSound() // 播放取消音效
+                                    viewModel.cancelTask()
+                                    dismiss()
+                                }
                             }) {
                                 HStack {
-                                    Image(systemName: "plus")
-                                    Text("新任务")
+                                    Image(systemName: "xmark")
+                                    Text("终止任务")
                                 }
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(buttonTextColor) // 使用主题按钮文本颜色
@@ -295,7 +331,7 @@ struct FocusTimerView: View {
                             }) {
                                 HStack {
                                     Image(systemName: "clock.arrow.circlepath")
-                                    Text("计划有变")
+                                    Text("调整时间")
                                 }
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(buttonTextColor) // 使用主题按钮文本颜色
@@ -322,11 +358,23 @@ struct FocusTimerView: View {
                     viewModel.updateTaskTime(by: newTime)
                 }
             )
-            .presentationDetents([.fraction(0.3)]) // 只占屏幕高度的30%
+            .presentationDetents([.height(285), .fraction(0.4)]) // 增加高度以容纳更多内容，增加了5%
             .presentationDragIndicator(.visible) // 显示拖动指示器
         }
         .sheet(isPresented: $isShowingTaskList) {
             NewTaskView(isPresented: $isShowingTaskList)
+        }
+        .alert(isPresented: $showTerminationAlert) {
+            Alert(
+                title: Text("确认终止任务"),
+                message: Text("您已完成\(elapsedTimeString)，将减少\(reducedTimeString)。\n系统会记录您已完成的时间。"),
+                primaryButton: .destructive(Text("终止任务")) {
+                    viewModel.playCancelSound() // 播放取消音效
+                    viewModel.cancelTask()
+                    dismiss()
+                },
+                secondaryButton: .cancel(Text("继续任务"))
+            )
         }
     }
 }
@@ -344,6 +392,26 @@ struct TimeAdjustmentView: View {
     private var minimumAdjustment: Int {
         // 允许减少时间，但不能让调整值本身低于0
         return 0
+    }
+    
+    // 获取当前任务
+    private var currentTask: Task? {
+        return viewModel.activeTask
+    }
+    
+    // 获取原始设定时间
+    private var originalDuration: Int {
+        return currentTask?.originalDuration() ?? currentTime / 60
+    }
+    
+    // 获取总调整时间
+    private var totalAdjustment: Int {
+        return currentTask?.totalTimeAdjustment() ?? 0
+    }
+    
+    // 获取调整历史
+    private var adjustmentHistory: [Int] {
+        return currentTask?.timeAdjustments ?? []
     }
     
     // 根据主题获取背景渐变
@@ -385,7 +453,113 @@ struct TimeAdjustmentView: View {
             .edgesIgnoringSafeArea(.all)
             
             // 内容层 - 精简布局以适应30%高度的弹窗
-            VStack(spacing: 20) {
+            VStack(spacing: 12) {
+                // 任务原始时间和调整历史信息 - 改为更紧凑的横向布局
+                VStack(spacing: 8) {
+                    // 原始设定、调整后时间和调整差值都在一行显示
+                    HStack(spacing: 12) {
+                        // 原始设定时间
+                        HStack(spacing: 4) {
+                            Text("原始:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Text("\(originalDuration)分钟")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+                        
+                        // 调整后时间(实时显示)
+                        HStack(spacing: 4) {
+                            Text("调整后:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            // 显示调整后的分钟数
+                            Text("\(originalDuration + timeAdjustment)分钟")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(timeAdjustment > 0 ? .green : (timeAdjustment < 0 ? .red : .white))
+                        }
+                        
+                        Spacer()
+                        
+                        // 即时调整值
+                        HStack(spacing: 2) {
+                            Text(timeAdjustment > 0 ? "+\(timeAdjustment)" : "\(timeAdjustment)")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(timeAdjustment > 0 ? .green : (timeAdjustment < 0 ? .red : .white))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(timeAdjustment > 0 ? Color.green.opacity(0.2) : (timeAdjustment < 0 ? Color.red.opacity(0.2) : Color.clear))
+                                )
+                                .opacity(timeAdjustment == 0 ? 0 : 1)
+                        }
+                    }
+                    
+                    // 累计调整和结束时间放在一行
+                    HStack {
+                        // 总调整时间
+                        HStack(spacing: 4) {
+                            Text("累计调整:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Text(totalAdjustment > 0 ? "+\(totalAdjustment)" : "\(totalAdjustment)")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(totalAdjustment > 0 ? .green : (totalAdjustment < 0 ? .red : .white))
+                        }
+                        
+                        Spacer()
+                        
+                        // 结束时间
+                        HStack(spacing: 4) {
+                            Text("结束时间:")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Text(endTimeString(from: currentTime + timeAdjustment * 60))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    
+                    // 调整历史记录 - 如果有历史记录，才显示
+                    if !adjustmentHistory.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("调整历史:")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.8))
+                            
+                            // 使用固定高度的滚动视图确保不会占用太多空间
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(adjustmentHistory.indices, id: \.self) { index in
+                                        let adjustment = adjustmentHistory[index]
+                                        Text(adjustment > 0 ? "+\(adjustment)" : "\(adjustment)")
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(
+                                                Capsule()
+                                                    .fill(adjustment > 0 ? Color.green.opacity(0.3) : Color.red.opacity(0.3))
+                                            )
+                                    }
+                                }
+                            }
+                            .frame(height: 24) // 减小高度以节省空间
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.black.opacity(0.2))
+                )
+                
                 // 自定义时间调整控件
                 VStack(spacing: 5) {
                     // 自定义加减按钮
@@ -441,10 +615,10 @@ struct TimeAdjustmentView: View {
                         
                         Spacer()
                     }
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 10) // 减小垂直padding
                 }
                 .padding(.horizontal)
-                .padding(.vertical, 15)
+                .padding(.vertical, 10) // 减小垂直padding
                 .background(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(Color.black.opacity(0.2))
@@ -455,15 +629,9 @@ struct TimeAdjustmentView: View {
                 )
                 
                 // 按钮区域和调整后时间
-                VStack(spacing: 15) {
-                    // 调整后时间显示
-                    Text("结束时间: \(endTimeString(from: currentTime + timeAdjustment * 60))")
-                        .font(.system(size: 16))
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.top, -5)
-                    
+                VStack(spacing: 12) { // 减小间距
                     // 按钮区域
-                    HStack(spacing: 35) {
+                    HStack(spacing: 30) { // 减小按钮间距
                         // 取消按钮
                         Button(action: {
                             viewModel.playCancelSound() // 播放取消音效
@@ -472,10 +640,10 @@ struct TimeAdjustmentView: View {
                             dismiss()
                         }) {
                             Text("取消")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(buttonTextColor)
-                                .padding(.horizontal, 32)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, 30)
+                                .padding(.vertical, 10)
                                 .background(
                                     Capsule()
                                         .fill(Color.white)
@@ -491,10 +659,10 @@ struct TimeAdjustmentView: View {
                             dismiss()
                         }) {
                             Text("确定")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(buttonTextColor)
-                                .padding(.horizontal, 32)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, 30)
+                                .padding(.vertical, 10)
                                 .background(
                                     Capsule()
                                         .fill(Color.white)
@@ -503,10 +671,9 @@ struct TimeAdjustmentView: View {
                         }
                     }
                 }
-                .padding(.top, 5)
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 22)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16) // 减小整体垂直padding
         }
     }
     

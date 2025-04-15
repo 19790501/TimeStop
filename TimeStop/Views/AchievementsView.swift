@@ -6,8 +6,7 @@ struct AchievementsView: View {
     @State private var selectedTab: Int = 0 // 默认选择"今日"标签
     @State private var showRandomDataAlert = false
     @State private var showComparisonDetail = false
-    @State private var selectedComparisonType: ActivityType?
-    @State private var lastRefreshTime: Date = Date()
+    @State private var selectedComparisonType: ActivityType? = nil
     @State private var refreshTimer: Timer?
     
     enum ViewTab: Int {
@@ -443,9 +442,6 @@ struct AchievementsView: View {
     private func refreshData() {
         // 随机生成数据用于测试，实际应用中可能是加载最新数据
         generateRandomData()
-        
-        // 更新最后刷新时间
-        lastRefreshTime = Date()
     }
     
     // 计算距离下一次刷新的时间
@@ -459,40 +455,32 @@ struct AchievementsView: View {
         let refreshTimes = [(11, 30), (17, 30), (20, 30)]
         
         // 计算下一个刷新时间点
-        var nextRefreshHour = 0
-        var nextRefreshMinute = 0
-        var found = false
+        var nextRefreshComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: now)
+        var foundNextRefresh = false
         
         for (h, m) in refreshTimes {
             if h > hour || (h == hour && m > minute) {
-                nextRefreshHour = h
-                nextRefreshMinute = m
-                found = true
+                nextRefreshComponents.hour = h
+                nextRefreshComponents.minute = m
+                foundNextRefresh = true
                 break
             }
         }
         
         // 如果当前时间已经超过了所有刷新点，那么下一个刷新点是明天的第一个
-        if !found {
-            nextRefreshHour = refreshTimes[0].0
-            nextRefreshMinute = refreshTimes[0].1
-        }
-        
-        // 创建下一个刷新时间的日期组件
-        var nextRefreshComponents = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: now)
-        nextRefreshComponents.hour = nextRefreshHour
-        nextRefreshComponents.minute = nextRefreshMinute
-        nextRefreshComponents.second = 0
-        
-        // 如果是明天的刷新点
-        if !found {
+        if !foundNextRefresh {
+            nextRefreshComponents.hour = refreshTimes[0].0
+            nextRefreshComponents.minute = refreshTimes[0].1
+            
+            // 如果是明天的刷新点
             if let nextDay = calendar.date(byAdding: .day, value: 1, to: now) {
                 nextRefreshComponents = calendar.dateComponents([.year, .month, .day], from: nextDay)
-                nextRefreshComponents.hour = nextRefreshHour
-                nextRefreshComponents.minute = nextRefreshMinute
-                nextRefreshComponents.second = 0
+                nextRefreshComponents.hour = refreshTimes[0].0
+                nextRefreshComponents.minute = refreshTimes[0].1
             }
         }
+        
+        nextRefreshComponents.second = 0
         
         // 计算时间差
         if let nextRefreshDate = calendar.date(from: nextRefreshComponents) {
@@ -1137,13 +1125,6 @@ struct AchievementsView: View {
     
     // MARK: - Helper Methods
     
-    // 格式化刷新时间显示
-    private func formatRefreshTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: date)
-    }
-    
     // 随机生成测试数据
     private func generateRandomData() {
         // 清除现有任务
@@ -1601,8 +1582,7 @@ struct ComparisonDetailView: View {
         let now = Date()
         
         // Get start of this week (Monday)
-        var startOfWeekComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-        let startOfThisWeek = calendar.date(from: startOfWeekComponents)!
+        let startOfThisWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
         
         // Calculate the start date based on current/last week and day offset
         let startOfWeek = isCurrentWeek ? 

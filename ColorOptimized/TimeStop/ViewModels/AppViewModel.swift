@@ -179,12 +179,12 @@ class AppViewModel: ObservableObject {
         
         // Simulate loading user data from UserDefaults or other storage
         do {
-            if let savedUser = UserDefaults.standard.data(forKey: "currentUser") {
-                do {
-                    let decoder = JSONDecoder()
-                    currentUser = try decoder.decode(User.self, from: savedUser)
-                    isAuthenticated = currentUser != nil
-                } catch {
+        if let savedUser = UserDefaults.standard.data(forKey: "currentUser") {
+            do {
+                let decoder = JSONDecoder()
+                currentUser = try decoder.decode(User.self, from: savedUser)
+                isAuthenticated = currentUser != nil
+            } catch {
                     logError(error, "decoding user data")
                     
                     // Attempt data recovery
@@ -198,15 +198,15 @@ class AppViewModel: ObservableObject {
                             logError(error, "recovering user data from backup")
                         }
                     }
-                }
             }
-            
-            // Load tasks
-            if let savedTasks = UserDefaults.standard.data(forKey: "tasks") {
-                do {
-                    let decoder = JSONDecoder()
-                    tasks = try decoder.decode([Task].self, from: savedTasks)
-                } catch {
+        }
+        
+        // Load tasks
+        if let savedTasks = UserDefaults.standard.data(forKey: "tasks") {
+            do {
+                let decoder = JSONDecoder()
+                tasks = try decoder.decode([Task].self, from: savedTasks)
+            } catch {
                     logError(error, "decoding tasks data")
                     
                     // Attempt data recovery
@@ -219,9 +219,9 @@ class AppViewModel: ObservableObject {
                             logError(error, "recovering tasks data from backup")
                         }
                     }
-                }
             }
-            
+        }
+        
             // Load sound settings with validation
             if let soundEnabledValue = UserDefaults.standard.object(forKey: "soundEnabled") as? Bool {
                 soundEnabled = soundEnabledValue
@@ -230,7 +230,7 @@ class AppViewModel: ObservableObject {
                 soundEnabled = true
                 print("Sound setting not found, using default value")
             }
-            
+        
             // Load vibration settings with validation
             if let vibrationEnabledValue = UserDefaults.standard.object(forKey: "vibrationEnabled") as? Bool {
                 vibrationEnabled = vibrationEnabledValue

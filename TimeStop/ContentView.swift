@@ -95,7 +95,7 @@ struct ContentView: View {
             .environmentObject(themeManager)
         }
         .navigationViewStyle(StackNavigationViewStyle())
-        .onChange(of: viewModel.activeTask) { newValue in
+        .onChange(of: viewModel.activeTask) { oldValue, newValue in
             withAnimation(.easeInOut(duration: Constants.standardAnimationDuration)) {
                 navigationManager.isShowingFocusTimer = newValue != nil
                 if newValue != nil {
@@ -103,7 +103,7 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: viewModel.isVerifying) { newValue in
+        .onChange(of: viewModel.isVerifying) { oldValue, newValue in
             if newValue {
                 withAnimation(.easeInOut(duration: Constants.standardAnimationDuration)) {
                     navigationManager.navigate(to: .verification)
@@ -216,7 +216,10 @@ struct ContentView: View {
                     .tag(NavigationManager.TabViewSelection.home)
                 
                 // 时间去哪了标签页
-                AchievementsView()
+                TimeWhereView_test()
+                    .environmentObject(viewModel)
+                    .environmentObject(themeManager)
+                    .environmentObject(userModel)
                     .tag(NavigationManager.TabViewSelection.timeAnalysis)
                 
                 // 成就标签页
@@ -237,7 +240,7 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea(edges: .bottom)
-        .onChange(of: selectedTab) { newValue in
+        .onChange(of: selectedTab) { oldValue, newValue in
             // Update the navigation manager when tab changes
             switch newValue {
             case .home: navigationManager.activeScreen = .home
@@ -294,7 +297,7 @@ struct ContentView: View {
                                 }
                             }
                             .toggleStyle(SwitchToggleStyle(tint: themeManager.colors.primary))
-                            .onChange(of: viewModel.soundEnabled) { newValue in
+                            .onChange(of: viewModel.soundEnabled) { oldValue, newValue in
                                 // 直接保存设置，不调用toggleSoundEnabled，避免循环调用
                                 UserDefaults.standard.set(newValue, forKey: "soundEnabled")
                             }

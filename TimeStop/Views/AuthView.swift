@@ -137,7 +137,7 @@ struct AuthView: View {
             // 检查颜色系统状态
             hasColorError = themeManager.hasError
         }
-        .onChange(of: themeManager.hasError) { newValue in
+        .onChange(of: themeManager.hasError) { oldValue, newValue in
             hasColorError = newValue
         }
     }

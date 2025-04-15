@@ -30,6 +30,8 @@ struct Task: Identifiable, Codable, Equatable {
     var isCompleted: Bool { completedAt != nil }
     var focusType: FocusType
     var verificationMethod: VerificationMethod?
+    var timeAdjustments: [Int] = [] // 存储时间调整记录，正数表示增加，负数表示减少
+    var isTerminated: Bool = false // 标记任务是否被提前终止
     
     init(id: String = UUID().uuidString, 
          title: String, 
@@ -38,7 +40,9 @@ struct Task: Identifiable, Codable, Equatable {
          createdAt: Date = Date(), 
          completedAt: Date? = nil, 
          note: String? = nil, 
-         verificationMethod: VerificationMethod? = nil) {
+         verificationMethod: VerificationMethod? = nil,
+         timeAdjustments: [Int] = [],
+         isTerminated: Bool = false) {
         self.id = id
         self.title = title
         self.focusType = focusType
@@ -47,11 +51,33 @@ struct Task: Identifiable, Codable, Equatable {
         self.completedAt = completedAt
         self.note = note
         self.verificationMethod = verificationMethod
+        self.timeAdjustments = timeAdjustments
+        self.isTerminated = isTerminated
     }
     
     // Implement Equatable
     static func == (lhs: Task, rhs: Task) -> Bool {
         lhs.id == rhs.id
+    }
+    
+    // 计算总的时间调整量
+    func totalTimeAdjustment() -> Int {
+        return timeAdjustments.reduce(0, +)
+    }
+    
+    // 获取原始设定的时间（当前持续时间减去所有调整）
+    func originalDuration() -> Int {
+        return duration - totalTimeAdjustment()
+    }
+    
+    // 计算因提前终止而减少的时间
+    func reducedTimeByTermination() -> Int {
+        if isTerminated {
+            // 找出时间调整中的负值总和，这些代表终止减少的时间
+            let negativeAdjustments = timeAdjustments.filter { $0 < 0 }
+            return abs(negativeAdjustments.reduce(0, +))
+        }
+        return 0
     }
     
     enum FocusType: String, Codable, CaseIterable {
