@@ -103,6 +103,17 @@ enum TimeStatus: String {
             return "时间不足"
         }
     }
+    
+    var color: Color {
+        switch self {
+        case .overTime:
+            return Color.red
+        case .normal:
+            return Color.green
+        case .underTime:
+            return Color.orange
+        }
+    }
 }
 
 // 任务类型统计结构
@@ -124,6 +135,18 @@ struct TaskTypeStat: Equatable {
         return Double(minutes)
     }
     
+    // 计算状态
+    var status: TaskTypeStatus {
+        // 这里简化处理，实际应基于比例、标准等
+        if minutes > 180 {
+            return .critical
+        } else if minutes > 120 {
+            return .warning
+        } else {
+            return .healthy
+        }
+    }
+    
     // 实现Equatable协议的静态方法
     static func == (lhs: TaskTypeStat, rhs: TaskTypeStat) -> Bool {
         return lhs.type == rhs.type
@@ -135,13 +158,21 @@ enum TaskTypeStatus: String {
     case healthy = "健康"
     case warning = "警告"
     case critical = "严重"
+    case normal = "正常"
+    case underAllocated = "时间偏少"
+    case severelyUnderAllocated = "时间严重不足"
+    case overAllocated = "时间偏多"
+    case highlyOverAllocated = "时间过多"
     
     // 获取状态颜色
     var color: Color {
         switch self {
-        case .healthy: return Color.green
-        case .warning: return Color.orange
-        case .critical: return Color.red
+        case .healthy, .normal:
+            return Color.green
+        case .warning, .underAllocated, .overAllocated:
+            return Color.orange
+        case .critical, .severelyUnderAllocated, .highlyOverAllocated:
+            return Color.red
         }
     }
 }
@@ -1643,14 +1674,7 @@ struct TimeWhereView_test: View {
 
     // 获取状态对应的颜色
     private func getStatusColor(_ status: TaskTypeStatus) -> Color {
-        switch status {
-        case .normal:
-            return .green
-        case .underAllocated, .overAllocated:
-            return .orange
-        case .severelyUnderAllocated, .highlyOverAllocated:
-            return .red
-        }
+        return status.color
     }
 
     private func timeAllocationView() -> some View {
@@ -1871,14 +1895,7 @@ struct TimeWhereView_test: View {
     
     // 获取时间状态对应的颜色
     private func getStatusColor(status: TimeStatus) -> Color {
-        switch status {
-        case .overTime:
-            return Color.red
-        case .normal:
-            return Color.green
-        case .underTime:
-            return Color.orange
-        }
+        return status.color
     }
     
     // 获取任务类型图标
@@ -2006,10 +2023,5 @@ struct TimeWhereView_test: View {
             .warning: 0.5,
             .critical: 0.0
         ]
-    }
-    
-    // 获取任务类型状态颜色
-    private func getStatusColor(_ status: TaskTypeStatus) -> Color {
-        return status.color
     }
 }
