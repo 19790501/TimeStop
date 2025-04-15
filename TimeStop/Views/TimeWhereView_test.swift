@@ -105,6 +105,47 @@ enum TimeStatus: String {
     }
 }
 
+// 任务类型统计结构
+struct TaskTypeStat: Equatable {
+    let type: String
+    let count: Int
+    let minutes: Int
+    let originalMinutes: Int
+    let adjustmentMinutes: Int
+    
+    // 终止任务相关数据
+    var terminatedCount: Int = 0      // 被终止的任务数量
+    var reducedMinutes: Int = 0       // 因终止而减少的分钟数
+    
+    // 计算百分比
+    var percentage: Double {
+        // 防止除以0
+        guard minutes > 0 else { return 0 }
+        return Double(minutes)
+    }
+    
+    // 实现Equatable协议的静态方法
+    static func == (lhs: TaskTypeStat, rhs: TaskTypeStat) -> Bool {
+        return lhs.type == rhs.type
+    }
+}
+
+// 时间健康状态枚举
+enum TaskTypeStatus: String {
+    case healthy = "健康"
+    case warning = "警告"
+    case critical = "严重"
+    
+    // 获取状态颜色
+    var color: Color {
+        switch self {
+        case .healthy: return Color.green
+        case .warning: return Color.orange
+        case .critical: return Color.red
+        }
+    }
+}
+
 // 确保可以访问ThemeManager中定义的AppColors
 struct TimeWhereView_test: View {
     @EnvironmentObject var userModel: UserModel
@@ -399,6 +440,83 @@ struct TimeWhereView_test: View {
         
         // 按时间降序排序
         return stats.sorted { $0.minutes > $1.minutes }
+    }
+    
+    // 获取所选时间范围的任务
+    var tasksForSelectedRange: [Task] {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        let completedTasks = appViewModel.tasks.filter { $0.isCompleted }
+        
+        switch selectedRange {
+        case .today:
+            return completedTasks.filter { task in
+                if let completedAt = task.completedAt {
+                    return calendar.isDate(completedAt, inSameDayAs: now)
+                }
+                return false
+            }
+        case .week:
+            let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+            let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek)!
+            return completedTasks.filter { task in
+                if let completedAt = task.completedAt {
+                    return completedAt >= startOfWeek && completedAt < endOfWeek
+                }
+                return false
+            }
+        case .month:
+            let components = calendar.dateComponents([.year, .month], from: now)
+            let startOfMonth = calendar.date(from: components)!
+            let nextMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth)!
+            return completedTasks.filter { task in
+                if let completedAt = task.completedAt {
+                    return completedAt >= startOfMonth && completedAt < nextMonth
+                }
+                return false
+            }
+        }
+    }
+    
+    // 所选时间范围内的总时长
+    var totalTimeForSelectedRange: Int {
+        tasksForSelectedRange.reduce(0) { $0 + $1.duration }
+    }
+    
+    // 获取不同任务类型
+    private func getTaskTypes() -> [String] {
+        let tasks = tasksForSelectedRange
+        if tasks.isEmpty {
+            return []
+        }
+        
+        var taskTypes = Set<String>()
+        for task in tasks {
+            taskTypes.insert(task.title)
+        }
+        
+        return Array(taskTypes).sorted()
+    }
+    
+    // 获取唯一的任务类型列表
+    private func getUniqueTaskTypes() -> [String] {
+        let tasks = tasksForSelectedRange
+        if tasks.isEmpty {
+            return []
+        }
+        
+        var taskTypes = Set<String>()
+        for task in tasks {
+            taskTypes.insert(task.title)
+        }
+        
+        return Array(taskTypes).sorted()
+    }
+    
+    // 获取特定类型的任务数量
+    private func getTaskCountByType(_ type: String) -> Int {
+        return tasksForSelectedRange.filter { $0.title == type }.count
     }
     
     var body: some View {
@@ -1708,5 +1826,190 @@ struct TimeWhereView_test: View {
         .background(themeManager.backgroundColor)
         .cornerRadius(20)
         .padding(.horizontal, 20)
+    }
+
+    // 获取任务类型统计数据
+    private func getTaskTypesStats() -> [TaskTypeStat] {
+        // 定义任务类型（8类）
+        let taskTypes = ["会议", "思考", "工作", "阅读", "生活", "运动", "摸鱼", "睡觉"]
+        var stats: [TaskTypeStat] = []
+        
+        for type in taskTypes {
+            let tasksOfThisType = tasksForSelectedRange.filter { task in task.title == type }
+            let count = tasksOfThisType.count
+            if count > 0 {
+                let minutes = tasksOfThisType.reduce(0) { result, task in result + task.duration }
+                let originalMinutes = tasksOfThisType.reduce(0) { result, task in result + task.originalDuration() }
+                let adjustmentMinutes = minutes - originalMinutes
+                
+                // 统计终止的任务
+                let terminatedTasks = tasksOfThisType.filter { task in task.isTerminated }
+                let terminatedCount = terminatedTasks.count
+                let reducedMinutes = terminatedTasks.reduce(0) { result, task in 
+                    result + abs(task.timeAdjustments.filter { adjustment in adjustment < 0 }.reduce(0, +)) 
+                }
+                
+                var stat = TaskTypeStat(
+                    type: type,
+                    count: count,
+                    minutes: minutes,
+                    originalMinutes: originalMinutes,
+                    adjustmentMinutes: adjustmentMinutes
+                )
+                
+                // 更新终止任务数据
+                stat.terminatedCount = terminatedCount
+                stat.reducedMinutes = reducedMinutes
+                
+                stats.append(stat)
+            }
+        }
+        
+        // 按时间降序排序
+        return stats.sorted { $0.minutes > $1.minutes }
+    }
+    
+    // 获取时间状态对应的颜色
+    private func getStatusColor(status: TimeStatus) -> Color {
+        switch status {
+        case .overTime:
+            return Color.red
+        case .normal:
+            return Color.green
+        case .underTime:
+            return Color.orange
+        }
+    }
+    
+    // 获取任务类型图标
+    private func getIconForTaskType(_ type: String) -> String {
+        switch type {
+        case "会议": return "person.3.fill"
+        case "思考": return "brain"
+        case "工作": return "briefcase.fill"
+        case "阅读": return "book.fill"
+        case "生活": return "house.fill"
+        case "运动": return "figure.run"
+        case "摸鱼": return "fish.fill"
+        case "睡觉": return "bed.double.fill"
+        default: return "questionmark.circle.fill"
+        }
+    }
+    
+    // 获取任务类型颜色
+    private func getTaskTypeColor(_ type: String) -> Color {
+        switch type {
+        case "会议": return Color.orange.opacity(0.7)  // 对应meeting
+        case "思考": return Color.purple.opacity(0.7)  // 对应thinking
+        case "工作": return Color.blue.opacity(0.7)    // 对应work
+        case "阅读": return Color.yellow.opacity(0.7)  // 对应reading
+        case "生活": return Color.pink.opacity(0.7)    // 对应life
+        case "运动": return Color.green.opacity(0.7)   // 对应exercise
+        case "摸鱼": return Color.cyan.opacity(0.7)    // 对应relax
+        case "睡觉": return Color.indigo.opacity(0.7)  // 对应sleep
+        default: return Color.blue.opacity(0.7)       // 默认颜色
+        }
+    }
+    
+    // 健康分数颜色
+    private func healthScoreColor(_ score: Double) -> Color {
+        switch score {
+        case 0..<40:
+            return .red
+        case 40..<70:
+            return .orange
+        case 70..<90:
+            return .yellow
+        default:
+            return .green
+        }
+    }
+    
+    // 生成随机测试数据
+    private func generateRandomTestData() {
+        // 清除现有测试数据
+        let existingTestTasks = appViewModel.tasks.filter { $0.isTestData }
+        for task in existingTestTasks {
+            appViewModel.deleteTask(task)
+        }
+        
+        // 任务类型
+        let taskTypes = ["会议", "思考", "工作", "阅读", "生活", "运动", "摸鱼", "睡觉"]
+        
+        // 时间周期
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // 创建今天的测试数据
+        for _ in 1...4 {
+            let randomType = taskTypes.randomElement() ?? "工作"
+            let randomDuration = Int.random(in: 15...120)
+            let randomHoursAgo = Double.random(in: 1...10)
+            let completedTime = calendar.date(byAdding: .hour, value: -Int(randomHoursAgo), to: now)!
+            
+            let task = Task(
+                title: randomType,
+                duration: randomDuration,
+                isCompleted: true,
+                completedAt: completedTime,
+                isTestData: true
+            )
+            appViewModel.addTask(task)
+        }
+        
+        // 创建本周的测试数据
+        let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+        for day in 1...6 {
+            for _ in 1...3 {
+                let randomType = taskTypes.randomElement() ?? "工作"
+                let randomDuration = Int.random(in: 15...120)
+                let dayDate = calendar.date(byAdding: .day, value: -day, to: now)!
+                
+                let task = Task(
+                    title: randomType,
+                    duration: randomDuration,
+                    isCompleted: true,
+                    completedAt: dayDate,
+                    isTestData: true
+                )
+                appViewModel.addTask(task)
+            }
+        }
+        
+        // 创建本月的测试数据
+        let components = calendar.dateComponents([.year, .month], from: now)
+        let startOfMonth = calendar.date(from: components)!
+        for day in 7...20 {
+            if let dayDate = calendar.date(byAdding: .day, value: -day, to: now),
+               dayDate >= startOfMonth {
+                for _ in 1...2 {
+                    let randomType = taskTypes.randomElement() ?? "工作"
+                    let randomDuration = Int.random(in: 15...120)
+                    
+                    let task = Task(
+                        title: randomType,
+                        duration: randomDuration,
+                        isCompleted: true,
+                        completedAt: dayDate,
+                        isTestData: true
+                    )
+                    appViewModel.addTask(task)
+                }
+            }
+        }
+    }
+    
+    // 任务类型状态评分映射 - 用于计算健康度
+    private func getTaskStatusScores() -> [TaskTypeStatus: Double] {
+        return [
+            .healthy: 1.0,
+            .warning: 0.5,
+            .critical: 0.0
+        ]
+    }
+    
+    // 获取任务类型状态颜色
+    private func getStatusColor(_ status: TaskTypeStatus) -> Color {
+        return status.color
     }
 }
