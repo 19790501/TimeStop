@@ -9,19 +9,21 @@ enum TimeRange {
 }
 
 // 任务类型统计
-struct TaskTypeStat: Identifiable {
-    let id = UUID()
-    let type: String
-    let minutes: Int
-    let color: Color
-    
-    var formattedTime: String {
-        let hours = minutes / 60
-        let mins = minutes % 60
-        if hours > 0 {
-            return "\(hours)小时\(mins > 0 ? " \(mins)分钟" : "")"
-        } else {
-            return "\(mins)分钟"
+extension TimeWhereView {
+    struct TaskTypeStat: Identifiable {
+        let id = UUID()
+        let type: String
+        let minutes: Int
+        let color: Color
+        
+        var formattedTime: String {
+            let hours = minutes / 60
+            let mins = minutes % 60
+            if hours > 0 {
+                return "\(hours)小时\(mins > 0 ? " \(mins)分钟" : "")"
+            } else {
+                return "\(mins)分钟"
+            }
         }
     }
 }
@@ -227,7 +229,7 @@ struct TimeWhereView: View {
     }
     
     // 任务类型卡片
-    private func taskTypeCard(_ stat: TaskTypeStat) -> some View {
+    private func taskTypeCard(_ stat: TimeWhereView.TaskTypeStat) -> some View {
         Button(action: {
             timeAllocationAlertView(for: stat)
         }) {
@@ -255,7 +257,7 @@ struct TimeWhereView: View {
     }
     
     // 时间分配弹窗
-    private func timeAllocationAlertView(for stat: TaskTypeStat) {
+    private func timeAllocationAlertView(for stat: TimeWhereView.TaskTypeStat) {
         let percentage = totalTimeForSelectedRange > 0 ? Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100 : 0
         
         let alert = UIAlertController(
