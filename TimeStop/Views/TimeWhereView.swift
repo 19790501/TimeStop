@@ -1,302 +1,325 @@
 import SwiftUI
 import Foundation
 
-// 时间范围枚举
-enum TimeRange {
-    case today   // 今日
-    case week    // 本周
-    case month   // 本月
+// 时间分析摘要数据结构
+struct TimeAnalysisSummary {
+    // 基本分析数据
+    var totalTime: Int = 0
+    var taskCount: Int = 0
+    var avgDuration: Int = 0
+    
+    // 时间过多/过少分析
+    var overAllocatedTypes: [(type: String, minutes: Int)] = []
+    var underAllocatedTypes: [(type: String, minutes: Int)] = []
 }
 
-// 任务类型统计
-extension TimeWhereView {
-    struct TaskTypeStat: Identifiable {
-        let id = UUID()
-        let type: String
-        let minutes: Int
-        let color: Color
-        
-        var formattedTime: String {
-            let hours = minutes / 60
-            let mins = minutes % 60
-            if hours > 0 {
-                return "\(hours)小时\(mins > 0 ? " \(mins)分钟" : "")"
-            } else {
-                return "\(mins)分钟"
-            }
-        }
-    }
-}
-
+// 确保可以访问ThemeManager中定义的AppColors
 struct TimeWhereView: View {
     @EnvironmentObject var userModel: UserModel
-    @EnvironmentObject var appViewModel: AppViewModel
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var appViewModel: AppViewModel
+    
+    // 定义时间范围枚举
+    enum TimeRange: String, CaseIterable, Identifiable {
+        case today = "今日"
+        case week = "本周"
+        case month = "本月"
+        
+        var id: String { self.rawValue }
+    }
     
     @State private var selectedRange: TimeRange = .today
-    @State private var selectedRole: String = "全部"
-    @State private var showEmptyState: Bool = false
+    @State private var showTaskDetail: Bool = false
+    @State private var selectedTaskType: String?
+    @State private var currentTaskType = ""
     
-    // 获取当前选择范围内的任务
-    private var tasksForSelectedRange: [Task] {
+    // 获取当前范围内的所有任务
+    private func getTasksForSelectedRange() -> [Task] {
         switch selectedRange {
         case .today:
-            return appViewModel.getTodayTasks()
+            return getTodayTasks()
         case .week:
-            return appViewModel.getWeeklyTasks()
+            return getWeekTasks()
         case .month:
-            return appViewModel.getMonthlyTasks()
+            return getMonthTasks()
+        }
+    }
+    
+    // 获取今日任务
+    private func getTodayTasks() -> [Task] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: today)!
+        
+        return appViewModel.completedTasks.filter { task in
+            task.startDate >= today && task.startDate < endOfDay
+        }
+    }
+    
+    // 获取本周任务
+    private func getWeekTasks() -> [Task] {
+        let calendar = Calendar.current
+        let today = Date()
+        let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today))!
+        let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek)!
+        
+        return appViewModel.completedTasks.filter { task in
+            task.startDate >= startOfWeek && task.startDate < endOfWeek
+        }
+    }
+    
+    // 获取本月任务
+    private func getMonthTasks() -> [Task] {
+        let calendar = Calendar.current
+        let today = Date()
+        let components = calendar.dateComponents([.year, .month], from: today)
+        let startOfMonth = calendar.date(from: components)!
+        let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth)!
+        
+        return appViewModel.completedTasks.filter { task in
+            task.startDate >= startOfMonth && task.startDate < endOfMonth
         }
     }
     
     // 获取任务类型统计
-    private var taskTypeStats: [TaskTypeStat] {
-        let filtered = selectedRole == "全部" ? tasksForSelectedRange : tasksForSelectedRange.filter { $0.category == selectedRole }
-        let completedTasks = filtered.filter { $0.isCompleted }
-        
-        var typeMinutes: [String: Int] = [:]
-        var colors: [String: Color] = [:]
-        
-        for task in completedTasks {
-            typeMinutes[task.type, default: 0] += task.duration
-            colors[task.type] = themeManager.colorFor(taskType: task.type)
-        }
-        
-        return typeMinutes.map { type, minutes in
-            TaskTypeStat(
-                type: type,
-                minutes: minutes,
-                color: colors[type] ?? .gray
-            )
-        }.sorted { $0.minutes > $1.minutes }
+    private func getTaskTypeStats() -> [TaskTypeStat] {
+        let tasks = getTasksForSelectedRange()
+        return getTaskTypeStatsForTasks(tasks)
     }
     
-    // 计算总时长
-    private var totalTimeForSelectedRange: Int {
-        taskTypeStats.reduce(0) { $0 + $1.minutes }
+    // 计算任务类型统计
+    private func getTaskTypeStatsForTasks(_ tasks: [Task]) -> [TaskTypeStat] {
+        var stats: [String: Int] = [:]
+        
+        for task in tasks {
+            stats[task.type, default: 0] += task.duration
+        }
+        
+        return stats.map { TaskTypeStat(type: $0.key, minutes: $0.value) }
+            .sorted { $0.minutes > $1.minutes }
     }
     
-    private var formattedTotalTime: String {
-        let hours = totalTimeForSelectedRange / 60
-        let mins = totalTimeForSelectedRange % 60
-        if hours > 0 {
-            return "\(hours)小时\(mins > 0 ? " \(mins)分钟" : "")"
-        } else {
-            return "\(mins)分钟"
-        }
+    // 计算任务类型所占总时间的百分比
+    private func calculatePercentage(for stat: TaskTypeStat) -> Double {
+        let totalTime = getTasksForSelectedRange().reduce(0) { $0 + $1.duration }
+        guard totalTime > 0 else { return 0 }
+        return Double(stat.minutes) / Double(totalTime) * 100
     }
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // 头部
-                headerView
+            ZStack {
+                themeManager.currentTheme.backgroundColor
+                    .ignoresSafeArea()
                 
-                // 角色选择器
-                roleSelector
-                
-                // 时间范围选择器
-                timeRangeSelector
-                
-                ScrollView {
-                    if taskTypeStats.isEmpty {
-                        emptyStateView
-                    } else {
-                        // 总时长卡片
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("时间分配")
-                                .font(.system(size: 20, weight: .bold))
-                                .padding(.horizontal)
-                            
-                            totalTimeCard
-                            
-                            // 任务类型列表
-                            ForEach(taskTypeStats) { stat in
-                                taskTypeCard(stat)
-                            }
+                VStack(spacing: 0) {
+                    // 顶部标题和范围选择
+                    VStack(spacing: 0) {
+                        // 标题
+                        Text("时间分配")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(themeManager.currentTheme.textColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding([.leading, .top])
+                        
+                        // 时间范围选择器
+                        timeRangeSelector
+                            .padding(.top, 10)
+                    }
+                    .padding(.horizontal)
+                    
+                    ScrollView {
+                        if getTaskTypeStats().isEmpty {
+                            emptyStateView
+                        } else {
+                            timeAllocationSection
                         }
-                        .padding()
                     }
+                    .background(themeManager.currentTheme.backgroundColor)
+                    
+                    Spacer()
                 }
             }
+            .navigationBarTitle("", displayMode: .inline)
             .navigationBarHidden(true)
-            .background(themeManager.backgroundColor.edgesIgnoringSafeArea(.all))
-        }
-    }
-    
-    // 头部视图
-    private var headerView: some View {
-        HStack {
-            Text("时间去哪了")
-                .font(.system(size: 28, weight: .bold))
-                .foregroundColor(themeManager.textColor)
-            
-            Spacer()
-        }
-        .padding()
-        .background(themeManager.backgroundColor)
-    }
-    
-    // 角色选择器
-    private var roleSelector: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(["全部", "工作", "学习", "生活"], id: \.self) { role in
-                    Button(action: {
-                        selectedRole = role
-                    }) {
-                        Text(role)
-                            .font(.system(size: 16, weight: .medium))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(selectedRole == role ? themeManager.primaryColor : themeManager.secondaryBackgroundColor)
-                            .foregroundColor(selectedRole == role ? .white : themeManager.textColor)
-                            .cornerRadius(20)
-                            .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
-                    }
-                    .buttonStyle(ScaleButtonStyle())
+            .sheet(isPresented: $showTaskDetail) {
+                if let typeSelected = selectedTaskType {
+                    TaskDetailView(selectedType: typeSelected, timeRange: selectedRange.rawValue, tasks: getTasksForSelectedRange().filter { $0.type == typeSelected })
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
         }
     }
     
     // 时间范围选择器
     private var timeRangeSelector: some View {
-        HStack(spacing: 12) {
-            ForEach([("今日", TimeRange.today), ("本周", TimeRange.week), ("本月", TimeRange.month)], id: \.0) { label, range in
+        HStack(spacing: 10) {
+            ForEach(TimeRange.allCases) { range in
                 Button(action: {
-                    selectedRange = range
+                    withAnimation {
+                        selectedRange = range
+                    }
                 }) {
-                    Text(label)
-                        .font(.system(size: 16, weight: .medium))
-                        .padding(.horizontal, 16)
+                    Text(range.rawValue)
+                        .font(.system(size: 14, weight: selectedRange == range ? .bold : .regular))
+                        .foregroundColor(selectedRange == range ? themeManager.currentTheme.accentColor : themeManager.currentTheme.textColor.opacity(0.7))
                         .padding(.vertical, 8)
-                        .background(selectedRange == range ? themeManager.primaryColor : themeManager.secondaryBackgroundColor)
-                        .foregroundColor(selectedRange == range ? .white : themeManager.textColor)
-                        .cornerRadius(20)
-                        .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
+                        .padding(.horizontal, 15)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(selectedRange == range ? themeManager.currentTheme.accentColor.opacity(0.2) : Color.clear)
+                        )
                 }
-                .buttonStyle(ScaleButtonStyle())
             }
+            Spacer()
         }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
     }
     
     // 空状态视图
     private var emptyStateView: some View {
         VStack(spacing: 20) {
-            Image(systemName: "chart.pie")
-                .font(.system(size: 50))
-                .foregroundColor(themeManager.secondaryTextColor)
-            
-            Text("暂无完成任务数据")
+            Text("暂无数据")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundColor(themeManager.secondaryTextColor)
+                .foregroundColor(themeManager.currentTheme.textColor.opacity(0.7))
+                .padding(.top, 50)
             
-            Text("你的已完成任务将在这里显示时间分配情况")
-                .font(.system(size: 16))
-                .foregroundColor(themeManager.tertiaryTextColor)
+            Text("完成任务后，这里将显示你的时间分配情况")
+                .font(.system(size: 14))
+                .foregroundColor(themeManager.currentTheme.textColor.opacity(0.5))
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
     
-    // 总时长卡片
-    private var totalTimeCard: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("总时长")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(themeManager.textColor)
-                
-                Text(formattedTotalTime)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(themeManager.primaryColor)
-            }
+    // 时间分配部分
+    private var timeAllocationSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("时间分配")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(themeManager.currentTheme.textColor)
+                .padding(.horizontal)
+                .padding(.bottom, 10)
+                .padding(.top, 20)
             
-            Spacer()
+            VStack(spacing: 15) {
+                // 任务类型列表
+                ForEach(getTaskTypeStats(), id: \.type) { stat in
+                    timeAllocationCard(for: stat)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
         }
-        .padding()
-        .background(themeManager.secondaryBackgroundColor)
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 3)
-        .padding(.horizontal)
     }
     
-    // 任务类型卡片
-    private func taskTypeCard(_ stat: TimeWhereView.TaskTypeStat) -> some View {
+    // 时间分配卡片
+    private func timeAllocationCard(for stat: TaskTypeStat) -> some View {
         Button(action: {
-            timeAllocationAlertView(for: stat)
+            selectedTaskType = stat.type
+            showTaskDetail = true
         }) {
             HStack {
-                Circle()
-                    .fill(stat.color)
-                    .frame(width: 14, height: 14)
-                
-                Text(stat.type)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(themeManager.textColor)
+                // 任务类型图标和名称
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(themeManager.getColorForTaskType(stat.type))
+                        .frame(width: 10, height: 10)
+                    
+                    Text(stat.type)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(themeManager.currentTheme.textColor)
+                }
                 
                 Spacer()
                 
-                Text(stat.formattedTime)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(themeManager.secondaryTextColor)
+                // 时间和百分比
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text("\(stat.minutes.minutesToHoursMinutesString())")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(themeManager.currentTheme.textColor)
+                    
+                    Text(String(format: "%.1f%%", calculatePercentage(for: stat)))
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.currentTheme.textColor.opacity(0.6))
+                }
             }
             .padding()
-            .background(themeManager.secondaryBackgroundColor)
-            .cornerRadius(16)
-            .shadow(color: Color.black.opacity(0.1), radius: 3, x: 0, y: 2)
-            .padding(.horizontal)
-        }
-    }
-    
-    // 时间分配弹窗
-    private func timeAllocationAlertView(for stat: TimeWhereView.TaskTypeStat) {
-        let percentage = totalTimeForSelectedRange > 0 ? Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100 : 0
-        
-        let alert = UIAlertController(
-            title: "\(stat.type)时间分配",
-            message: "在\(rangeTitle)中，你在\(stat.type)上花费了\(stat.formattedTime)，占总时间的\(String(format: "%.1f", percentage))%",
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: "确定", style: .default))
-        
-        // 获取当前视图控制器并显示提示
-        UIApplication.shared.windows.first?.rootViewController?.present(alert, animated: true)
-    }
-    
-    // 当前范围标题
-    private var rangeTitle: String {
-        switch selectedRange {
-        case .today: return "今天"
-        case .week: return "本周"
-        case .month: return "本月"
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(themeManager.currentTheme.cardBackgroundColor)
+                    .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+            )
         }
     }
 }
 
-// 按钮缩放动画
-struct ScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
+// 任务类型统计结构
+struct TaskTypeStat: Identifiable {
+    let id = UUID()
+    let type: String
+    let minutes: Int
+}
+
+// 任务详情视图
+struct TaskDetailView: View {
+    @EnvironmentObject var themeManager: ThemeManager
+    @Environment(\.presentationMode) var presentationMode
+    
+    let selectedType: String
+    let timeRange: String
+    let tasks: [Task]
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                themeManager.currentTheme.backgroundColor
+                    .ignoresSafeArea()
+                
+                VStack {
+                    if tasks.isEmpty {
+                        Text("暂无任务数据")
+                            .foregroundColor(themeManager.currentTheme.textColor.opacity(0.7))
+                            .padding()
+                    } else {
+                        List {
+                            ForEach(tasks.sorted(by: { $0.startDate > $1.startDate })) { task in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(task.name)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(themeManager.currentTheme.textColor)
+                                    
+                                    Text("\(task.formattedStartDate) · \(task.duration.minutesToHoursMinutesString())")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(themeManager.currentTheme.textColor.opacity(0.6))
+                                }
+                                .padding(.vertical, 5)
+                            }
+                        }
+                        .listStyle(PlainListStyle())
+                    }
+                }
+            }
+            .navigationBarTitle("\(selectedType) · \(timeRange)", displayMode: .inline)
+            .navigationBarItems(trailing: Button(action: {
+                presentationMode.wrappedValue.dismiss()
+            }) {
+                Text("完成")
+                    .foregroundColor(themeManager.currentTheme.accentColor)
+            })
+        }
     }
 }
 
-// 预览视图
-struct TimeWhereView_Previews: PreviewProvider {
-    static var previews: some View {
-        TimeWhereView()
-            .environmentObject(UserModel())
-            .environmentObject(AppViewModel())
-            .environmentObject(ThemeManager())
+// 扩展 Int 将分钟转为小时分钟格式
+extension Int {
+    func minutesToHoursMinutesString() -> String {
+        let hours = self / 60
+        let minutes = self % 60
+        
+        if hours > 0 {
+            return "\(hours)小时\(minutes > 0 ? " \(minutes)分钟" : "")"
+        } else {
+            return "\(minutes)分钟"
+        }
     }
 } 
