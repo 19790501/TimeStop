@@ -453,7 +453,7 @@ struct TimeWhereView_test: View {
             
             VStack(spacing: 0) {
                 // 添加40点的顶部间距，使整个页面下移
-                Spacer().frame(height: 40)
+                Spacer().frame(height: 40) // 顶部安全间距，确保内容不被状态栏遮挡
                 
                 headerView
                 
@@ -501,7 +501,7 @@ struct TimeWhereView_test: View {
                             }
                         }) {
                             Text(role.type)
-                                .font(.system(size: 16)).frame(height: 20) // 增大20%，从12增加到14.4
+                                .font(.system(size: 16, weight: .medium)).frame(minWidth: 60, height: 20) // 统一角色按钮字体
                                 .foregroundColor(selectedRole == role.type ? .white : themeManager.colors.secondaryText)
                                 .lineLimit(1) // 确保文字不换行
                                 .padding(.vertical, 5) // 保持垂直内边距
@@ -828,7 +828,7 @@ struct TimeWhereView_test: View {
                         .frame(width: 40, alignment: .leading)
                 }
                 .frame(width: 90, alignment: .leading)
-                .padding(.leading, 14)
+                .padding(.leading, 14) // 任务卡片左侧内边距
                 
                 // 进度区域 - 固定宽度
                 HStack(alignment: .center, spacing: 8) {
@@ -841,25 +841,25 @@ struct TimeWhereView_test: View {
                                 // 背景条 - 固定尺寸
                                 Capsule()
                                     .fill(Color.gray.opacity(0.2))
-                                    .frame(width: 60, height: 6)
+                                    .frame(width: 60, height: 6) // 固定进度条尺寸
                                 
                                 // 进度条 - 根据百分比计算宽度
                                 Capsule()
                                     .fill(Color.black)
                                     .frame(width: min(60 * CGFloat(percentage) / 100.0, 60), height: 6)
                             }
-                            .frame(width: 60, height: 6)
+                            .frame(width: 60, height: 6) // 固定进度条尺寸
 
                             // 百分比文字
                             Text(String(format: "%.1f%%", percentage))
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 14, weight: .bold)) // 统一百分比字体
                                 .foregroundColor(Color.black)
                                 .frame(width: 55, alignment: .trailing)
                                 .lineLimit(1)
                             
                             // 状态图标
                             Image(systemName: getStatusIcon(deviationType))
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 14, weight: .bold)) // 统一百分比字体
                                 .foregroundColor(getStatusColor(deviationType))
                                 .frame(width: 20)
                         }
@@ -904,7 +904,7 @@ struct TimeWhereView_test: View {
             }
             .frame(height: 60) // 固定卡片高度
             .background(
-                RoundedRectangle(cornerRadius: 15)
+                RoundedRectangle(cornerRadius: 15) // 任务卡片圆角
                     .fill(themeManager.colors.secondaryBackground)
                     .shadow(color: Color.black.opacity(0.07), radius: 4, x: 0, y: 2)
             )
@@ -2055,7 +2055,7 @@ struct TimeWhereView_test: View {
                 }
             }
             .padding(.horizontal, 32) // 增加"时间分配"标题水平内边距，从24增加到32
-            .padding(.top, 32) // 增加顶部间距32点，整体下移22点
+            .padding(.top, 32) // 使用固定顶部间距使布局更加一致
         }
     }
     
