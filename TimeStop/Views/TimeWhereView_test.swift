@@ -452,8 +452,8 @@ struct TimeWhereView_test: View {
             themeManager.colors.background.edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 0) {
-                // 添加20点的顶部间距
-                Spacer().frame(height: 20)
+                // 添加40点的顶部间距，使整个页面下移
+                Spacer().frame(height: 40)
                 
                 headerView
                 
@@ -501,7 +501,7 @@ struct TimeWhereView_test: View {
                             }
                         }) {
                             Text(role.type)
-                                .font(.system(size: 14.4)) // 增大20%，从12增加到14.4
+                                .font(.system(size: 16)).frame(height: 20) // 增大20%，从12增加到14.4
                                 .foregroundColor(selectedRole == role.type ? .white : themeManager.colors.secondaryText)
                                 .lineLimit(1) // 确保文字不换行
                                 .padding(.vertical, 5) // 保持垂直内边距
@@ -2055,7 +2055,7 @@ struct TimeWhereView_test: View {
                 }
             }
             .padding(.horizontal, 32) // 增加"时间分配"标题水平内边距，从24增加到32
-            .padding(.top, 10) // 增加顶部间距10点
+            .padding(.top, 32) // 增加顶部间距32点，整体下移22点
         }
     }
     
