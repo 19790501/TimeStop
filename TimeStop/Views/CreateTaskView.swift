@@ -110,12 +110,18 @@ struct CreateTaskView: View {
         
         let screenWidth = (UIScreen.main.bounds.width - 50) * 0.85 // 与显示宽度保持一致
         
+        // 确保screenWidth大于0
+        guard screenWidth > 0 else { return }
+        
         // 计算百分比位置
-        var percentage = min(value.location.x / screenWidth, 1.0)
+        var percentage = min(max(0, value.location.x) / screenWidth, 1.0)
         percentage = max(0, percentage)
         
+        // 确保maxMinutes大于0
+        let safeMaxMinutes = max(1, maxMinutes)
+        
         // 按5分钟的步进计算分钟数
-        let rawMinutes = Int(percentage * CGFloat(maxMinutes))
+        let rawMinutes = Int(percentage * CGFloat(safeMaxMinutes))
         let newMinutes = (rawMinutes / 5) * 5
         
         // 仅当值发生变化时才播放反馈和更新状态
@@ -124,7 +130,7 @@ struct CreateTaskView: View {
             playFeedback()
             
             // 更新状态
-            selectedMinutes = min(newMinutes, maxMinutes)
+            selectedMinutes = min(max(0, newMinutes), safeMaxMinutes)
         }
         
         // 设置当前时间模式
@@ -145,12 +151,18 @@ struct CreateTaskView: View {
         
         let screenWidth = (UIScreen.main.bounds.width - 50) * 0.85 // 与显示宽度保持一致
         
+        // 确保screenWidth大于0
+        guard screenWidth > 0 else { return }
+        
         // 计算百分比位置
-        var percentage = min(value.location.x / screenWidth, 1.0)
+        var percentage = min(max(0, value.location.x) / screenWidth, 1.0)
         percentage = max(0, percentage)
         
+        // 确保maxHours大于0
+        let safeMaxHours = max(1, maxHours)
+        
         // 计算小时数
-        let rawHours = Int(percentage * CGFloat(maxHours))
+        let rawHours = Int(percentage * CGFloat(safeMaxHours))
         
         // 仅当值发生变化时才播放反馈和更新状态
         if selectedHours != rawHours {
@@ -158,7 +170,7 @@ struct CreateTaskView: View {
             playFeedback()
             
             // 更新状态
-            selectedHours = min(rawHours, maxHours)
+            selectedHours = min(max(0, rawHours), safeMaxHours)
         }
         
         // 设置当前时间模式
@@ -289,10 +301,10 @@ struct CreateTaskView: View {
                                     .font(.subheadline)
                                     .foregroundColor(themeManager.colors.text)
                                 
-                                Text("点击开始任务 / 长按2秒自定义")
+                                Text("点击 / 长按")
                                     .font(.system(size: 11))
                                     .foregroundColor(themeManager.colors.secondaryText)
-                                    .padding(.leading, 8)
+                                    .padding(.leading, 6)
                             }
                             
                             // 始终显示常用任务图标，不再使用if条件
@@ -690,7 +702,7 @@ struct FavoriteTaskSetupView: View {
                             .foregroundColor(.white)
                             .background(Color.white.opacity(0.12))
                             .cornerRadius(10)
-                            .onChange(of: durationText) { oldValue, newValue in
+                            .onChange(of: durationText) { newValue in
                                 if let duration = Int(newValue), duration > 0 {
                                     localTask.duration = min(duration, 600)
                                     if duration > 600 {

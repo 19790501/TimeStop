@@ -102,6 +102,7 @@ struct ThemeColors {
     let accent: Color        // 辅助色2 - 暖灰色
     let background: Color    // 背景色 - 浅粉色
     let secondaryBackground: Color  // 次要背景色
+    let cardBackground: Color      // 卡片背景色
     let text: Color          // 主要文本色
     let secondaryText: Color // 次要文本色
     let buttonText: Color    // 按钮文本色 - 白色
@@ -120,6 +121,7 @@ struct ThemeColors {
             accent: Color.red.opacity(0.5),
             background: Color(red: 0.1, green: 0.1, blue: 0.1),
             secondaryBackground: Color(red: 0.15, green: 0.15, blue: 0.15),
+            cardBackground: Color(red: 0.2, green: 0.2, blue: 0.2),
             text: Color.white,
             secondaryText: Color.gray,
             buttonText: Color.white,
@@ -191,6 +193,7 @@ class ThemeManager: ObservableObject {
                     accent: AppColors.getSafeColor(AppColors.pureWhite, fallback: AppColors.pureWhiteFallback),
                     background: AppColors.getSafeColor(AppColors.lightNeonGreen, fallback: AppColors.lightNeonGreenFallback),
                     secondaryBackground: AppColors.getSafeColor(AppColors.cardBackground, fallback: AppColors.cardBackgroundFallback),
+                    cardBackground: AppColors.getSafeColor(AppColors.cardBackground, fallback: AppColors.cardBackgroundFallback),
                     text: AppColors.getSafeColor(AppColors.darkText, fallback: AppColors.darkTextFallback),
                     secondaryText: AppColors.getSafeColor(AppColors.secondaryText, fallback: AppColors.secondaryTextFallback),
                     buttonText: Color.white,
@@ -203,6 +206,7 @@ class ThemeManager: ObservableObject {
                     accent: Color(hex: "FFD700"),      // 金色（点缀色）
                     background: Color(hex: "F0E6FF"),  // 淡雅白紫色背景（从F5F0FF调深）
                     secondaryBackground: Color.white,  // 纯白色（次要背景色）
+                    cardBackground: Color.white,       // 纯白色（卡片背景色）
                     text: Color(hex: "3A2A6D"),        // 暗紫色文本（更深）
                     secondaryText: Color(hex: "7A7A8E"), // 灰紫色（次要文本色，从8B8B9E调深）
                     buttonText: Color.white,           // 白色（按钮文本色）

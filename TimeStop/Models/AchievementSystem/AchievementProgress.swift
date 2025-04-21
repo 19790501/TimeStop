@@ -1,145 +1,188 @@
 import Foundation
 import SwiftUI
 
-class AchievementProgress: ObservableObject {
-    @Published private(set) var progress: [AchievementType: Int] = [:]
-    @Published var lastUpdateDate: Date = Date()
-    @Published var lastResetDate: Date = Date()
+// 成就进度数据模型
+struct AchievementProgress: Identifiable, Codable {
+    var id = UUID()
+    var type: AchievementType
+    var value: Int = 0
+    var lastUpdated: Date = Date()
     
-    private let userDefaults = UserDefaults.standard
-    private let progressKey = "achievement_progress"
-    private let lastUpdateKey = "lastUpdateDate"
-    private let lastResetKey = "lastResetDate"
-    private var lastLevels: [AchievementType: Int] = [:]
+    // 新增字段: 用于跟踪连续打卡等统计性成就
+    var streakCount: Int = 0
+    var lastStreakDate: Date?
+    var metadata: [String: String] = [:]
     
-    init() {
-        loadProgress()
-        // 初始化上次等级记录
-        for type in AchievementType.allCases {
-            lastLevels[type] = currentLevel(for: type)
-        }
-        // 检查是否需要周重置
-        checkAndResetIfNeeded()
+    var level: Int {
+        return type.achievementLevel(for: value)
     }
     
-    // 检查是否需要周重置
-    private func checkAndResetIfNeeded() {
+    var lastInteractionDate: Date {
+        return lastUpdated
+    }
+    
+    var valueToNextLevel: Int {
+        return type.valueToNextLevel(current: value)
+    }
+    
+    var progressPercentage: Double {
+        return type.progressPercentage(for: value)
+    }
+    
+    var levelDescription: String {
+        return type.levelDescription(level)
+    }
+    
+    var achievementDescription: String {
+        return type.achievementDescription(for: level)
+    }
+    
+    var suggestion: String {
+        return type.achievementSuggestion(for: level)
+    }
+    
+    var color: Color {
+        return type.color
+    }
+    
+    var levelColor: Color {
+        return type.levelColor(level)
+    }
+    
+    var icon: String {
+        return type.icon
+    }
+    
+    // 更新成就数据
+    mutating func updateValue(newValue: Int) {
+        // 旧有类型直接累加分钟数
+        if [.meeting, .thinking, .work, .life, .exercise, .reading, .sleep, .relax].contains(type) {
+            self.value += newValue
+        } else {
+            // 新类型根据不同逻辑更新
+            updateBasedOnType(newValue: newValue)
+        }
+        self.lastUpdated = Date()
+    }
+    
+    // 基于不同成就类型的更新逻辑
+    private mutating func updateBasedOnType(newValue: Int) {
+        switch type {
+        // 连续打卡类成就处理
+        case .dailyStreak, .weeklyStreak, .monthlyStreak:
+            updateStreakCount(newValue: newValue)
+            
+        // 任务完成相关
+        case .taskCompletion:
+            self.value += newValue // 直接累加完成的任务数
+            
+        // 专注时间里程碑
+        case .focusMilestone:
+            self.value += newValue // 直接累加专注分钟数
+            
+        // 其他新增类型
+        default:
+            // 基于特定条件的更新，暂时直接更新传入值
+            self.value = newValue
+        }
+    }
+    
+    // 更新连续打卡计数
+    private mutating func updateStreakCount(newValue: Int) {
         let calendar = Calendar.current
-        let now = Date()
+        let today = Date()
         
-        // 获取上次重置的周数
-        let lastResetWeek = calendar.component(.weekOfYear, from: lastResetDate)
-        let currentWeek = calendar.component(.weekOfYear, from: now)
-        
-        // 如果不在同一周，需要重置
-        if lastResetWeek != currentWeek {
-            resetWeeklyProgress()
-            lastResetDate = now
-            userDefaults.set(lastResetDate, forKey: lastResetKey)
-        }
-    }
-    
-    // 重置周进度
-    private func resetWeeklyProgress() {
-        // 保留最高等级记录
-        let maxLevels = lastLevels
-        // 重置当前进度
-        progress.removeAll()
-        saveProgress()
-        // 恢复最高等级记录
-        lastLevels = maxLevels
-    }
-    
-    // 加载进度
-    private func loadProgress() {
-        if let data = userDefaults.data(forKey: progressKey),
-           let decoded = try? JSONDecoder().decode([AchievementType: Int].self, from: data) {
-            progress = decoded
+        guard let lastDate = lastStreakDate else {
+            // 首次记录
+            self.streakCount = 1
+            self.value = 1
+            self.lastStreakDate = today
+            return
         }
         
-        if let date = userDefaults.object(forKey: lastUpdateKey) as? Date {
-            lastUpdateDate = date
-        }
-        
-        if let resetDate = userDefaults.object(forKey: lastResetKey) as? Date {
-            lastResetDate = resetDate
-        }
-    }
-    
-    // 保存进度
-    private func saveProgress() {
-        if let encoded = try? JSONEncoder().encode(progress) {
-            userDefaults.set(encoded, forKey: progressKey)
-            userDefaults.set(Date(), forKey: lastUpdateKey)
-        }
-    }
-    
-    // 更新进度并检查成就解锁
-    func updateProgress(for type: AchievementType, minutes: Int) {
-        // 先检查是否需要重置
-        checkAndResetIfNeeded()
-        
-        let currentMinutes = progress[type] ?? 0
-        progress[type] = currentMinutes + minutes
-        saveProgress()
-        
-        // 检查是否解锁新等级
-        let newLevel = currentLevel(for: type)
-        let oldLevel = lastLevels[type] ?? 0
-        
-        if newLevel > oldLevel {
-            // 解锁新成就
-            AchievementNotificationManager.shared.showAchievementUnlocked(type: type, level: newLevel)
-            // 更新等级记录
-            lastLevels[type] = newLevel
-        }
-    }
-    
-    // 获取当前等级
-    func currentLevel(for type: AchievementType) -> Int {
-        let minutes = progress[type] ?? 0
-        return type.achievementLevel(for: minutes)
-    }
-    
-    // 获取进度百分比
-    func progressPercentage(for type: AchievementType) -> Double {
-        let minutes = progress[type] ?? 0
-        return type.progressPercentage(for: minutes)
-    }
-    
-    // 获取距离下一级所需时间
-    func minutesToNextLevel(for type: AchievementType) -> Int {
-        let minutes = progress[type] ?? 0
-        return type.minutesToNextLevel(for: minutes)
-    }
-    
-    // 获取总完成度百分比
-    var totalCompletionPercentage: Double {
-        let totalLevels = AchievementType.allCases.count * 6 // 6个等级
-        var completedLevels = 0
-        
-        for type in AchievementType.allCases {
-            completedLevels += currentLevel(for: type)
-        }
-        
-        return Double(completedLevels) / Double(totalLevels)
-    }
-    
-    // 获取已解锁成就数量
-    var unlockedAchievementsCount: Int {
-        var count = 0
-        for type in AchievementType.allCases {
-            if currentLevel(for: type) > 0 {
-                count += 1
+        switch type {
+        case .dailyStreak:
+            // 如果最后打卡是昨天，连续+1
+            if calendar.isDateInYesterday(lastDate) {
+                self.streakCount += 1
+                self.value = self.streakCount
+            } 
+            // 如果是今天，保持不变
+            else if calendar.isDateInToday(lastDate) {
+                // 不变
+            } 
+            // 如果间隔超过1天，重置为1
+            else {
+                self.streakCount = 1
+                self.value = 1
             }
+            
+        case .weeklyStreak:
+            let lastWeekComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: lastDate)
+            let thisWeekComponents = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)
+            
+            // 如果是上周，连续+1
+            if lastWeekComponents.yearForWeekOfYear == thisWeekComponents.yearForWeekOfYear && 
+               lastWeekComponents.weekOfYear == thisWeekComponents.weekOfYear! - 1 {
+                self.streakCount += 1
+                self.value = self.streakCount
+            }
+            // 如果是本周，保持不变
+            else if lastWeekComponents.yearForWeekOfYear == thisWeekComponents.yearForWeekOfYear && 
+                    lastWeekComponents.weekOfYear == thisWeekComponents.weekOfYear {
+                // 不变
+            }
+            // 否则重置
+            else {
+                self.streakCount = 1
+                self.value = 1
+            }
+            
+        case .monthlyStreak:
+            let lastMonthComponents = calendar.dateComponents([.year, .month], from: lastDate)
+            let thisMonthComponents = calendar.dateComponents([.year, .month], from: today)
+            
+            // 如果是上月，连续+1
+            if lastMonthComponents.year == thisMonthComponents.year && 
+               lastMonthComponents.month == thisMonthComponents.month! - 1 {
+                self.streakCount += 1
+                self.value = self.streakCount
+            }
+            // 如果是本月，保持不变
+            else if lastMonthComponents.year == thisMonthComponents.year && 
+                    lastMonthComponents.month == thisMonthComponents.month {
+                // 不变
+            }
+            // 否则重置
+            else {
+                self.streakCount = 1
+                self.value = 1
+            }
+            
+        default:
+            // 默认情况，直接更新值
+            self.value = newValue
         }
-        return count
+        
+        self.lastStreakDate = today
     }
     
-    // 重置所有进度
-    func resetAllProgress() {
-        progress.removeAll()
-        lastLevels.removeAll()
-        saveProgress()
+    // 存储额外元数据
+    mutating func storeMetadata(key: String, value: String) {
+        metadata[key] = value
+    }
+    
+    // 获取元数据
+    func getMetadata(key: String) -> String? {
+        return metadata[key]
+    }
+    
+    // 兼容旧有API
+    var minutes: Int {
+        return value
+    }
+    
+    mutating func addMinutes(_ minutes: Int) {
+        updateValue(newValue: minutes)
     }
 } 

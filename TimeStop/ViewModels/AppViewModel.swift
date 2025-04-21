@@ -98,7 +98,30 @@ class AppViewModel: ObservableObject {
         static let errorSound: SystemSoundID = 1073
         static let achievementSound: SystemSoundID = 1025
         static let alertSound: SystemSoundID = 1005
+        
+        // 倒计时结束铃声选项
+        static let timerRingtones: [Ringtone] = [
+            Ringtone(id: "default", name: "默认铃声", systemSoundID: 1005),
+            Ringtone(id: "bell", name: "清脆铃声", systemSoundID: 1013),
+            Ringtone(id: "glass", name: "水晶提示", systemSoundID: 1314),
+            Ringtone(id: "horn", name: "喇叭提醒", systemSoundID: 1033),
+            Ringtone(id: "notes", name: "音符旋律", systemSoundID: 1022)
+        ]
     }
+    
+    // 铃声模型
+    struct Ringtone: Identifiable, Equatable {
+        let id: String
+        let name: String
+        let systemSoundID: SystemSoundID
+        
+        static func == (lhs: Ringtone, rhs: Ringtone) -> Bool {
+            return lhs.id == rhs.id
+        }
+    }
+    
+    // 添加铃声选择属性
+    @Published var selectedRingtoneID: String = "default" // 默认铃声ID
     
     init() {
         // Load user data from storage
@@ -108,6 +131,14 @@ class AppViewModel: ObservableObject {
         if tasks.isEmpty {
             addDemoTasks()
         }
+        
+        // 加载用户铃声设置
+        if let savedRingtoneID = UserDefaults.standard.string(forKey: "selectedRingtoneID") {
+            selectedRingtoneID = savedRingtoneID
+        }
+        
+        // 加载用户声音设置
+        soundEnabled = UserDefaults.standard.bool(forKey: "soundEnabled")
         
         // Setup publishers
         setupPublishers()
@@ -727,9 +758,8 @@ class AppViewModel: ObservableObject {
         }
         
         guard let soundURL = Bundle.main.url(forResource: "intense_alert", withExtension: "mp3") else {
-            // 如果找不到指定的声音文件，尝试使用系统声音
-            let systemSoundID: SystemSoundID = 1005 // 系统警报声音
-            AudioServicesPlaySystemSound(systemSoundID)
+            // 如果找不到指定的声音文件，使用用户选择的系统声音
+            AudioServicesPlaySystemSound(currentRingtone.systemSoundID)
             
             // 使用备用方法播放连续声音
             playFallbackAlertSound()
@@ -766,7 +796,7 @@ class AppViewModel: ObservableObject {
                 return
             }
             
-            AudioServicesPlaySystemSound(Constants.alertSound) // 系统警报声音
+            AudioServicesPlaySystemSound(self.currentRingtone.systemSoundID) // 使用用户选择的铃声
         }
     }
     
@@ -1111,6 +1141,29 @@ class AppViewModel: ObservableObject {
         currentUser = user
         isAuthenticated = true
         saveUserData()
+    }
+    
+    // 获取当前选择的铃声
+    var currentRingtone: Ringtone {
+        return Constants.timerRingtones.first { $0.id == selectedRingtoneID } ?? Constants.timerRingtones[0]
+    }
+    
+    // 获取所有铃声选项
+    var availableRingtones: [Ringtone] {
+        return Constants.timerRingtones
+    }
+    
+    // 选择并保存新铃声
+    func selectRingtone(id: String) {
+        selectedRingtoneID = id
+        UserDefaults.standard.set(id, forKey: "selectedRingtoneID")
+    }
+    
+    // 试听铃声
+    func playRingtoneSample(id: String) {
+        if let ringtone = Constants.timerRingtones.first(where: { $0.id == id }) {
+            AudioServicesPlaySystemSound(ringtone.systemSoundID)
+        }
     }
 }
 

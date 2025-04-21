@@ -115,6 +115,11 @@ struct TimeWhereView_test: View {
     @State private var showWeeklySummary: Bool = false
     @State private var showMonthlySummary: Bool = false
     
+    // 在顶部添加状态变量
+    @State private var isGeneratingData = false
+    @State private var generationProgress: Double = 0
+    @State private var cancelGeneration = false
+    
     // 角色定义
     let roleStandards: [RoleStandard] = [
         RoleStandard(
@@ -501,11 +506,11 @@ struct TimeWhereView_test: View {
                             }
                         }) {
                             Text(role.type)
-                                .font(.system(size: 16)).frame(height: 20) // 增大20%，从12增加到14.4
+                                .font(.system(size: 14.4)).frame(height: 18) // 将字体从16点缩小到14.4点，高度从20缩小到18
                                 .foregroundColor(selectedRole == role.type ? .white : themeManager.colors.secondaryText)
                                 .lineLimit(1) // 确保文字不换行
-                                .padding(.vertical, 5) // 保持垂直内边距
-                                .padding(.horizontal, 9) // 略微增加水平内边距
+                                .padding(.vertical, 4.5) // 将内边距从5缩小到4.5
+                                .padding(.horizontal, 8) // 将内边距从9缩小到8
                                 .background(
                                     ZStack {
                                         if selectedRole == role.type {
@@ -524,35 +529,14 @@ struct TimeWhereView_test: View {
                                 )
                         }
                         .buttonStyle(ScaleButtonStyle())
-                        .scaleEffect(0.87 * 1.2) // 整体缩小13%再放大20%，相当于原来的104.4%
+                        .scaleEffect(0.94) // 将按钮整体缩小，原为0.87*1.2=1.044，缩小约10%为0.94
                     }
                 }
                 
                 Spacer()
                 
-                Button(action: {
-                    generateRandomTestData()
-                    showAlert = true
-                }) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.orange)
-                        .padding(8)
-                        .background(
-                            Circle()
-                                .fill(themeManager.colors.secondaryBackground)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(
-                                            themeManager.currentTheme == .elegantPurple ?
-                                                Color(hex: "483D8B").opacity(0.4) :
-                                                Color.clear,
-                                            lineWidth: 1.5
-                                        )
-                                )
-                                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
-                        )
-                }
+                // 替换为新的带加载指示器的按钮
+                dataGenerationButton
             }
             .padding(.horizontal, 32) // 增加顶部标题水平内边距，从24增加到32
             .padding(.top, 25)
@@ -564,11 +548,6 @@ struct TimeWhereView_test: View {
                     dismissButton: .default(Text("确定"))
                 )
             }
-            
-            // 移除原本的角色选择器
-            // roleSelector
-            //    .padding(.horizontal, 24)
-            //    .padding(.bottom, 6)
             
             // 角色描述
             Text(currentRoleStandard.description)
@@ -594,11 +573,23 @@ struct TimeWhereView_test: View {
                     .font(.title3)
                     .foregroundColor(themeManager.colors.text)
                 
+                if isGeneratingData {
+                    VStack(spacing: 10) {
+                        ProgressView(value: generationProgress, total: 1.0)
+                            .progressViewStyle(LinearProgressViewStyle(tint: themeManager.colors.primary))
+                            .frame(width: 200)
+                        
+                        Text("正在生成测试数据...")
+                            .font(.callout)
+                            .foregroundColor(themeManager.colors.secondaryText)
+                    }
+                } else {
                 Text("点击页面右上角闪电⚡按钮生成测试数据")
                     .font(.callout)
                     .foregroundColor(themeManager.colors.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
+                }
             }
             Spacer()
         }
@@ -1445,8 +1436,19 @@ struct TimeWhereView_test: View {
         }
     }
     
-    // 生成随机测试数据
+    // 生成随机测试数据 - 优化后的版本
     func generateRandomTestData() {
+        // 如果已经在生成数据，则取消
+        if isGeneratingData {
+            cancelGeneration = true
+            return
+        }
+        
+        // 设置生成状态
+        isGeneratingData = true
+        generationProgress = 0
+        cancelGeneration = false
+        
         // 清除之前的测试数据
         appViewModel.tasks.removeAll { task in
             task.createdAt > Date().addingTimeInterval(-30 * 24 * 60 * 60) && 
@@ -1461,100 +1463,195 @@ struct TimeWhereView_test: View {
         let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
         let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
         
-        // 任务类型及其基本配置
+        // 任务类型及其基本配置 - 进一步减少生成的任务数量
         let taskConfigs: [(title: String, minDuration: Int, maxDuration: Int, todayCount: Int, weekCount: Int, monthCount: Int, adjustFrequency: Double, terminateFrequency: Double)] = [
             // 标题, 最短时长, 最长时长, 今日数量, 本周数量, 本月数量, 调整频率, 终止频率
-            ("睡觉", 360, 540, 1, 7, 30, 0.1, 0.05),
-            ("工作", 180, 540, 1, 5, 22, 0.3, 0.1),
-            ("会议", 30, 120, 1, 3, 12, 0.4, 0.2),
-            ("思考", 20, 90, 1, 4, 15, 0.2, 0.1),
-            ("摸鱼", 15, 60, 2, 10, 40, 0.1, 0.05),
-            ("运动", 15, 60, 1, 3, 12, 0.1, 0.05),
-            ("阅读", 20, 90, 1, 4, 16, 0.2, 0.1),
-            ("生活", 30, 180, 2, 10, 40, 0.1, 0.05)
+            ("睡觉", 360, 540, 1, 2, 3, 0.1, 0.05),
+            ("工作", 180, 540, 1, 2, 3, 0.3, 0.1),
+            ("会议", 30, 120, 1, 2, 3, 0.4, 0.2),
+            ("思考", 20, 90, 1, 2, 3, 0.2, 0.1),
+            ("摸鱼", 15, 60, 1, 2, 3, 0.1, 0.05),
+            ("运动", 15, 60, 1, 2, 3, 0.1, 0.05),
+            ("阅读", 20, 90, 1, 2, 3, 0.2, 0.1),
+            ("生活", 30, 180, 1, 2, 3, 0.1, 0.05)
         ]
         
-        // 基于当前选择的角色调整任务时长和数量
-        for (_, config) in taskConfigs.enumerated() {
+        // 计算总任务数，用于进度显示
+        let totalTaskTypes = taskConfigs.count
+        let totalTasksToCreate = taskConfigs.reduce(0) { $0 + $1.todayCount + min(2, $1.weekCount) + min(1, $1.monthCount) }
+        var tasksCreated = 0
+        
+        // 在后台线程生成数据
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 所有生成的任务集合
+            var allGeneratedTasks: [Task] = []
+            
+            // 分批处理各种任务类型
+            for (batchIndex, config) in taskConfigs.enumerated() {
+                if self.cancelGeneration {
+                    break
+                }
+                
             let taskType = config.title
             var minDuration = config.minDuration
             var maxDuration = config.maxDuration
             let todayCount = config.todayCount
-            let weekCount = config.weekCount
+                let weekCount = min(2, config.weekCount) // 限制为最多2个每周任务
+                let monthCount = min(1, config.monthCount) // 限制为最多1个每月任务
             
             // 根据选定角色调整测试数据
-            if let standard = currentRoleStandard.getStandard(for: taskType) {
+                if let standard = self.currentRoleStandard.getStandard(for: taskType) {
                 // 调整数据以反映当前角色标准
                 let lowerBound = Int(standard.min * 60) // 转换为分钟
                 let upperBound = Int(standard.max * 60) // 转换为分钟
                 
-                // 随机决定是否让数据偏离基准范围(50%概率)
-                let shouldDeviate = Bool.random()
-                
-                if shouldDeviate {
-                    // 随机决定是高于还是低于基准范围(50/50概率)
-                    let isHigher = Bool.random()
-                    
-                    if isHigher {
-                        // 高于基准范围10-30%
-                        let deviationFactor = Double.random(in: 1.1...1.3)
-                        minDuration = max(lowerBound, Int(Double(upperBound) * deviationFactor))
-                        maxDuration = Int(Double(upperBound) * deviationFactor * 1.2)
-                    } else {
-                        // 低于基准范围10-30%
-                        let deviationFactor = Double.random(in: 0.7...0.9)
-                        maxDuration = min(lowerBound, Int(Double(lowerBound) * deviationFactor))
-                        minDuration = Int(Double(lowerBound) * deviationFactor * 0.8)
-                    }
-                } else {
-                    // 在基准范围内
+                    // 在基准范围内随机化
                     minDuration = lowerBound
                     maxDuration = upperBound
-                }
                 
                 // 确保最小值不小于10分钟
                 minDuration = max(10, minDuration)
             }
+                
+                // 批量创建任务
+                var batchTasks: [Task] = []
             
             // 生成今日任务
             for _ in 0..<todayCount {
-                createRandomTask(taskType: taskType, 
+                    if self.cancelGeneration { break }
+                    
+                    if let task = self.createRandomTaskObject(
+                        taskType: taskType, 
                                 minDuration: minDuration, 
                                 maxDuration: maxDuration,
                                 startDate: todayStart, 
                                 endDate: now,
                                 adjustFrequency: config.adjustFrequency,
-                                terminateFrequency: config.terminateFrequency)
+                        terminateFrequency: config.terminateFrequency
+                    ) {
+                        batchTasks.append(task)
+                        tasksCreated += 1
+                    }
             }
             
-            // 生成本周任务(除去今日)
+                // 生成本周任务(除去今日) - 限制数量
             let additionalWeekTasks = max(0, weekCount - todayCount)
             for _ in 0..<additionalWeekTasks {
-                createRandomTask(taskType: taskType, 
+                    if self.cancelGeneration { break }
+                    
+                    if let task = self.createRandomTaskObject(
+                        taskType: taskType, 
                                 minDuration: minDuration, 
                                 maxDuration: maxDuration,
                                 startDate: weekStart, 
                                 endDate: todayStart.addingTimeInterval(-1),
                                 adjustFrequency: config.adjustFrequency,
-                                terminateFrequency: config.terminateFrequency)
+                        terminateFrequency: config.terminateFrequency
+                    ) {
+                        batchTasks.append(task)
+                        tasksCreated += 1
+                    }
             }
             
-            // 生成本月任务(除去本周)
-            let additionalMonthTasks = max(0, config.monthCount - weekCount)
+                // 生成本月任务(除去本周) - 严格限制数量
+                let additionalMonthTasks = max(0, monthCount)
             for _ in 0..<additionalMonthTasks {
-                createRandomTask(taskType: taskType, 
+                    if self.cancelGeneration { break }
+                    
+                    if let task = self.createRandomTaskObject(
+                        taskType: taskType, 
                                 minDuration: minDuration, 
                                 maxDuration: maxDuration,
                                 startDate: monthStart, 
                                 endDate: weekStart.addingTimeInterval(-1),
                                 adjustFrequency: config.adjustFrequency,
-                                terminateFrequency: config.terminateFrequency)
+                        terminateFrequency: config.terminateFrequency
+                    ) {
+                        batchTasks.append(task)
+                        tasksCreated += 1
+            }
+        }
+                
+                // 添加到总任务集合
+                allGeneratedTasks.append(contentsOf: batchTasks)
+                
+                // 更新进度
+                let progress = Double(batchIndex + 1) / Double(totalTaskTypes)
+                DispatchQueue.main.async {
+                    self.generationProgress = progress
+                }
+                
+                // 批次之间添加小暂停，避免CPU过载
+                if !self.cancelGeneration && batchIndex < taskConfigs.count - 1 {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+            }
+            
+            // 最终更新 - 将生成的任务添加到ViewModel
+            DispatchQueue.main.async {
+                // 批量添加任务到应用状态
+                if !self.cancelGeneration {
+                    self.appViewModel.tasks.append(contentsOf: allGeneratedTasks)
+                    self.showAlert = true
+                }
+                
+                // 重置状态
+                self.isGeneratingData = false
+                self.generationProgress = 0
+                self.cancelGeneration = false
             }
         }
     }
+
+    // 在顶部标题旁添加加载指示器的按钮视图
+    private var dataGenerationButton: some View {
+        Button(action: {
+            generateRandomTestData()
+        }) {
+            if isGeneratingData {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .orange))
+                        .scaleEffect(0.8)
+                    Text(String(format: "%.0f%%", generationProgress * 100))
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                }
+                .padding(8)
+                .background(
+                    Circle()
+                        .fill(themeManager.colors.secondaryBackground)
+                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                )
+            } else {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.orange)
+                    .padding(8)
+                    .background(
+                        Circle()
+                            .fill(themeManager.colors.secondaryBackground)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(
+                                        themeManager.currentTheme == .elegantPurple ?
+                                            Color(hex: "483D8B").opacity(0.4) :
+                                            Color.clear,
+                                        lineWidth: 1.5
+                                    )
+                            )
+                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+                    )
+            }
+        }
+        .disabled(isGeneratingData && !cancelGeneration)
+    }
     
-    // 辅助方法：创建单个随机任务
-    private func createRandomTask(taskType: String, minDuration: Int, maxDuration: Int, startDate: Date, endDate: Date, adjustFrequency: Double, terminateFrequency: Double) {
+    // 辅助方法：创建单个随机任务对象（不直接添加到appViewModel）
+    private func createRandomTaskObject(taskType: String, minDuration: Int, maxDuration: Int, startDate: Date, endDate: Date, adjustFrequency: Double, terminateFrequency: Double) -> Task? {
+        // 避免日期范围问题
+        guard endDate > startDate else { return nil }
+        
         let duration = Int.random(in: minDuration...maxDuration)
         let randomTimeOffset = Double.random(in: 0...(endDate.timeIntervalSince(startDate)))
         let completedAt = startDate.addingTimeInterval(randomTimeOffset)
@@ -1589,7 +1686,7 @@ struct TimeWhereView_test: View {
             task.duration += reductionAmount
         }
         
-        appViewModel.tasks.append(task)
+        return task
     }
     
     // 获取所选时间范围内的唯一任务类型
@@ -2055,7 +2152,7 @@ struct TimeWhereView_test: View {
                 }
             }
             .padding(.horizontal, 32) // 增加"时间分配"标题水平内边距，从24增加到32
-            .padding(.top, 32) // 增加顶部间距32点，整体下移22点
+            .padding(.top, 10) // 增加顶部间距10点
         }
     }
     
@@ -2336,6 +2433,9 @@ struct TimeWhereView_test: View {
     // 恢复时间范围选择器
     private var timeRangeSelector: some View {
         VStack(spacing: 4) {
+            // 添加15点的顶部间距，将选择器向下移动
+            Spacer().frame(height: 15)
+            
             HStack(spacing: 12) {
                 ForEach(TimeRange.allCases) { range in
                     Button(action: {

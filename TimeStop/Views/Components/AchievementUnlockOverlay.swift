@@ -112,7 +112,7 @@ struct AchievementUnlockOverlay: View {
                 }
                 
                 // 描述
-                Text(type.levelSuggestion(level))
+                Text(type.achievementSuggestion(for: level))
                     .font(.body)
                     .multilineTextAlignment(.center)
                     .foregroundColor(themeManager.colors.secondaryText)

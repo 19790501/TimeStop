@@ -12,6 +12,9 @@ struct TimeStopApp: App {
     @StateObject private var viewModel = AppViewModel()
     @StateObject private var themeManager = ThemeManager()
     
+    // 在全局确保成就管理器被初始化
+    private let achievementManager = AchievementManager.shared
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -20,6 +23,15 @@ struct TimeStopApp: App {
                 .environmentObject(themeManager)
                 .environmentObject(UserModel.shared)
                 .onAppear {
+                    // 确保应用启动时初始化成就系统
+                    _ = achievementManager
+                    
+                    // 根据UserDefaults设置当前主题
+                    if let savedTheme = UserDefaults.standard.string(forKey: "selectedTheme"),
+                       let theme = ThemeManager.AppTheme(rawValue: savedTheme) {
+                        themeManager.switchTheme(to: theme)
+                    }
+                    
                     // 初始化模型
                     initializeModels()
                     

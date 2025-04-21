@@ -118,7 +118,7 @@ struct StatsView: View {
                     .frame(height: 6)
             }
             
-            NavigationLink(destination: AchievementCollectionView()) {
+            NavigationLink(destination: AchievementCollectionView(achievementManager: AchievementManager.shared)) {
                 Text("查看全部")
                     .font(.subheadline)
                     .foregroundColor(themeManager.currentTheme.primaryColor)

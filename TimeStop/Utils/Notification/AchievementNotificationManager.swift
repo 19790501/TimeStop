@@ -33,7 +33,7 @@ class AchievementNotificationManager: ObservableObject {
         // 发送系统通知
         let content = UNMutableNotificationContent()
         content.title = "成就解锁！"
-        content.body = "恭喜你解锁了\(type.name)的\(AchievementType.levelDescriptions[level] ?? "")成就"
+        content.body = "恭喜你解锁了\(type.name)的\(type.levelDescription(level))成就"
         content.sound = .default
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
@@ -53,7 +53,7 @@ class AchievementNotificationManager: ObservableObject {
                     // 成就图标
                     ZStack {
                         Circle()
-                            .fill(themeManager.currentTheme.primaryColor)
+                            .fill(themeManager.colors.primary)
                             .frame(width: 80, height: 80)
                         
                         Image(systemName: achievement.type.icon)
@@ -66,15 +66,15 @@ class AchievementNotificationManager: ObservableObject {
                         Text("成就解锁！")
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(themeManager.currentTheme.textColor)
+                            .foregroundColor(themeManager.colors.text)
                         
-                        Text("\(achievement.type.name) - \(AchievementType.levelDescriptions[achievement.level] ?? "")")
+                        Text("\(achievement.type.name) - \(achievement.type.levelDescription(achievement.level))")
                             .font(.headline)
-                            .foregroundColor(themeManager.currentTheme.secondaryTextColor)
+                            .foregroundColor(themeManager.colors.secondaryText)
                     }
                 }
                 .padding()
-                .background(themeManager.currentTheme.cardBackgroundColor)
+                .background(themeManager.colors.cardBackground)
                 .cornerRadius(15)
                 .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
                 .transition(.move(edge: .top).combined(with: .opacity))

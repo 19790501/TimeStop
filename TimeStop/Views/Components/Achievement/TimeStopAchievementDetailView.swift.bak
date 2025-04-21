@@ -1,6 +1,50 @@
+// 重命名文件: TimeStopAchievementDetailView.swift
+// 此文件负责展示成就详情页面
+
+// 明确地导入SwiftUI，并禁用UIKit中的冲突类型
 import SwiftUI
 
-struct TimeStopAchievementDetailView: View {
+// 定义一个命名空间包装，避免命名冲突
+internal enum SUI {
+    typealias Circle = SwiftUI.Circle
+    typealias Color = SwiftUI.Color
+    typealias Text = SwiftUI.Text
+    typealias Image = SwiftUI.Image
+    typealias RoundedRectangle = SwiftUI.RoundedRectangle
+    typealias View = SwiftUI.View
+    typealias VStack = SwiftUI.VStack
+    typealias HStack = SwiftUI.HStack
+    typealias ZStack = SwiftUI.ZStack
+    typealias ScrollView = SwiftUI.ScrollView
+    typealias Spacer = SwiftUI.Spacer
+    typealias Button = SwiftUI.Button
+    typealias LinearGradient = SwiftUI.LinearGradient
+    typealias Gradient = SwiftUI.Gradient
+    typealias ForEach = SwiftUI.ForEach
+    typealias Group = SwiftUI.Group
+    typealias EnvironmentObject = SwiftUI.EnvironmentObject
+    typealias Environment = SwiftUI.Environment
+    typealias State = SwiftUI.State
+    typealias StrokeStyle = SwiftUI.StrokeStyle
+    typealias Font = SwiftUI.Font
+    typealias Animation = SwiftUI.Animation
+    typealias CGFloat = CoreGraphics.CGFloat
+    typealias UIScreen = UIKit.UIScreen
+    typealias EdgeInsets = SwiftUI.EdgeInsets
+    
+    enum Font {
+        typealias Weight = SwiftUI.Font.Weight
+    }
+}
+
+// Explicit import for any other frameworks that might be causing ambiguity
+// Add other imports if needed
+
+
+// 使用显式的SwiftUI.Circle()来避免与可能的UIKit Circle重名冲突
+// 因为项目中的扩展方法可能同时使用了SwiftUI和UIKit
+
+struct TimeStopAchievementDetailView: SUI.View {
     let type: AchievementType
     let level: Int
     let minutes: Int
@@ -13,7 +57,7 @@ struct TimeStopAchievementDetailView: View {
         if level >= type.levelThresholds.count {
             return 0 // 已达最高级
         }
-        return type.valueToNextLevel(current: minutes)
+        return type.minutesToNextLevel(for: minutes)
     }
     
     // 计算等级进度百分比
@@ -21,37 +65,37 @@ struct TimeStopAchievementDetailView: View {
         return type.progressPercentage(for: minutes)
     }
     
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
+    var body: some SUI.View {
+        SUI.ScrollView {
+            SUI.VStack(spacing: 24) {
                 // 成就图标和标题
-                VStack(spacing: 16) {
+                SUI.VStack(spacing: 16) {
                     // 成就图标
-                    ZStack {
-                        Circle()
+                    SUI.ZStack {
+                        SUI.Circle()
                             .fill(type.color.opacity(0.2))
                             .frame(width: 100, height: 100)
                             .shadow(color: type.color.opacity(0.5), radius: 8, x: 0, y: 4)
                         
-                        Circle()
+                        SUI.Circle()
                             .stroke(type.levelColor(level), lineWidth: 3)
                             .frame(width: 100, height: 100)
                         
-                        Image(systemName: type.icon)
-                            .font(.system(size: 50))
+                        SUI.Image(systemName: type.icon)
+                            .font(SUI.Font.system(size: 50))
                             .foregroundColor(type.color)
                     }
                     
                     // 成就名称和等级
-                    VStack(spacing: 8) {
-                        Text(type.name)
-                            .font(.title2)
-                            .fontWeight(.bold)
+                    SUI.VStack(spacing: 8) {
+                        SUI.Text(type.name)
+                            .font(SUI.Font.title2)
+                            .fontWeight(SUI.Font.Weight.bold)
                             .foregroundColor(getTextColor())
                         
-                        Text(type.levelDescription(level))
-                            .font(.title3)
-                            .fontWeight(.semibold)
+                        SUI.Text(type.levelDescription(level))
+                            .font(SUI.Font.title3)
+                            .fontWeight(SUI.Font.Weight.semibold)
                             .foregroundColor(type.color)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 4)
@@ -62,76 +106,76 @@ struct TimeStopAchievementDetailView: View {
                 .padding(.top)
                 
                 // 等级指示器
-                HStack(spacing: 12) {
-                    ForEach(0..<6) { index in
-                        VStack(spacing: 4) {
-                            Circle()
-                                .fill(index < level ? type.color : Color.gray.opacity(0.3))
+                SUI.HStack(spacing: 12) {
+                    SUI.ForEach(0..<6) { index in
+                        SUI.VStack(spacing: 4) {
+                            SUI.Circle()
+                                .fill(index < level ? type.color : SUI.Color.gray.opacity(0.3))
                                 .frame(width: 16, height: 16)
                             
-                            Text("\(index + 1)")
-                                .font(.caption2)
-                                .foregroundColor(index < level ? type.color : .gray)
+                            SUI.Text("\(index + 1)")
+                                .font(SUI.Font.caption2)
+                                .foregroundColor(index < level ? type.color : SUI.Color.gray)
                         }
                     }
                 }
                 .padding(.horizontal)
                 
                 // 进度卡片
-                VStack(spacing: 16) {
+                SUI.VStack(spacing: 16) {
                     // 当前进度
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("当前累计时间")
-                                .font(.headline)
+                    SUI.HStack {
+                        SUI.VStack(alignment: .leading, spacing: 4) {
+                            SUI.Text("当前累计时间")
+                                .font(SUI.Font.headline)
                                 .foregroundColor(getTextColor())
                             
                             if minutes >= 60 {
-                                Text("\(minutes / 60)小时\(minutes % 60)分钟")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
+                                SUI.Text("\(minutes / 60)小时\(minutes % 60)分钟")
+                                    .font(SUI.Font.title3)
+                                    .fontWeight(SUI.Font.Weight.semibold)
                                     .foregroundColor(type.color)
                             } else {
-                                Text("\(minutes)分钟")
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
+                                SUI.Text("\(minutes)分钟")
+                                    .font(SUI.Font.title3)
+                                    .fontWeight(SUI.Font.Weight.semibold)
                                     .foregroundColor(type.color)
                             }
                         }
                         
-                        Spacer()
+                        SUI.Spacer()
                         
                         // 累计时间图标
-                        Image(systemName: "clock.fill")
-                            .font(.system(size: 30))
+                        SUI.Image(systemName: "clock.fill")
+                            .font(SUI.Font.system(size: 30))
                             .foregroundColor(getTextColor().opacity(0.7))
                     }
                     
                     // 进度条
-                    VStack(alignment: .leading, spacing: 8) {
+                    SUI.VStack(alignment: .leading, spacing: 8) {
                         // 进度百分比
-                        HStack {
-                            Text("等级进度")
-                                .font(.subheadline)
+                        SUI.HStack {
+                            SUI.Text("等级进度")
+                                .font(SUI.Font.subheadline)
                                 .foregroundColor(getTextColor().opacity(0.7))
                             
-                            Spacer()
+                            SUI.Spacer()
                             
-                            Text("\(Int(progressPercentage * 100))%")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                            SUI.Text("\(Int(progressPercentage * 100))%")
+                                .font(SUI.Font.subheadline)
+                                .fontWeight(SUI.Font.Weight.semibold)
                                 .foregroundColor(type.color)
                         }
                         
                         // 自定义进度条
-                        ZStack(alignment: .leading) {
+                        SUI.ZStack(alignment: .leading) {
                             // 背景
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.gray.opacity(0.2))
+                            SUI.RoundedRectangle(cornerRadius: 6)
+                                .fill(SUI.Color.gray.opacity(0.2))
                                 .frame(height: 12)
                             
                             // 进度
-                            RoundedRectangle(cornerRadius: 6)
+                            SUI.RoundedRectangle(cornerRadius: 6)
                                 .fill(type.color)
                                 .frame(width: animateProgress ? 
                                       CGFloat(progressPercentage) * UIScreen.main.bounds.width * 0.8 : 0, 
@@ -140,17 +184,17 @@ struct TimeStopAchievementDetailView: View {
                         }
                         
                         // 时间里程碑标记
-                        HStack {
+                        SUI.HStack {
                             if level > 0 && level < type.levelThresholds.count {
-                                Text("\(type.levelThresholds[level-1])分钟")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                                SUI.Text("\(type.levelThresholds[level-1])分钟")
+                                    .font(SUI.Font.caption)
+                                    .foregroundColor(SUI.Color.gray)
                                 
-                                Spacer()
+                                SUI.Spacer()
                                 
-                                Text("\(type.levelThresholds[level])分钟")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+                                SUI.Text("\(type.levelThresholds[level])分钟")
+                                    .font(SUI.Font.caption)
+                                    .foregroundColor(SUI.Color.gray)
                             }
                         }
                     }
@@ -162,37 +206,37 @@ struct TimeStopAchievementDetailView: View {
                 
                 // 下一等级信息
                 if level < type.levelThresholds.count {
-                    VStack(spacing: 12) {
-                        Text("距离下一等级")
-                            .font(.headline)
+                    SUI.VStack(spacing: 12) {
+                        SUI.Text("距离下一等级")
+                            .font(SUI.Font.headline)
                             .foregroundColor(getTextColor())
                         
-                        HStack {
-                            Image(systemName: "arrow.up.forward.circle.fill")
-                                .font(.system(size: 24))
+                        SUI.HStack {
+                            SUI.Image(systemName: "arrow.up.forward.circle.fill")
+                                .font(SUI.Font.system(size: 24))
                                 .foregroundColor(type.color)
                             
-                            Text(type.levelDescription(level + 1))
-                                .font(.title3)
-                                .fontWeight(.semibold)
+                            SUI.Text(type.levelDescription(level + 1))
+                                .font(SUI.Font.title3)
+                                .fontWeight(SUI.Font.Weight.semibold)
                                 .foregroundColor(type.color)
                         }
                         
                         if minutesToNextLevel > 0 {
-                            HStack {
-                                Text("还需")
-                                    .font(.subheadline)
+                            SUI.HStack {
+                                SUI.Text("还需")
+                                    .font(SUI.Font.subheadline)
                                     .foregroundColor(getTextColor().opacity(0.7))
                                 
                                 if minutesToNextLevel >= 60 {
-                                    Text("\(minutesToNextLevel / 60)小时\(minutesToNextLevel % 60)分钟")
-                                        .font(.subheadline)
-                                        .fontWeight(.bold)
+                                    SUI.Text("\(minutesToNextLevel / 60)小时\(minutesToNextLevel % 60)分钟")
+                                        .font(SUI.Font.subheadline)
+                                        .fontWeight(SUI.Font.Weight.bold)
                                         .foregroundColor(type.color)
                                 } else {
-                                    Text("\(minutesToNextLevel)分钟")
-                                        .font(.subheadline)
-                                        .fontWeight(.bold)
+                                    SUI.Text("\(minutesToNextLevel)分钟")
+                                        .font(SUI.Font.subheadline)
+                                        .fontWeight(SUI.Font.Weight.bold)
                                         .foregroundColor(type.color)
                                 }
                             }
@@ -204,19 +248,19 @@ struct TimeStopAchievementDetailView: View {
                     .shadow(color: type.color.opacity(0.2), radius: 5, x: 0, y: 2)
                 } else {
                     // 最高等级提示
-                    VStack(spacing: 12) {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 40))
-                            .foregroundColor(Color.yellow)
-                            .shadow(color: Color.orange.opacity(0.5), radius: 5, x: 0, y: 2)
+                    SUI.VStack(spacing: 12) {
+                        SUI.Image(systemName: "crown.fill")
+                            .font(SUI.Font.system(size: 40))
+                            .foregroundColor(SUI.Color.yellow)
+                            .shadow(color: SUI.Color.orange.opacity(0.5), radius: 5, x: 0, y: 2)
                         
-                        Text("恭喜！")
-                            .font(.title3)
-                            .fontWeight(.bold)
+                        SUI.Text("恭喜！")
+                            .font(SUI.Font.title3)
+                            .fontWeight(SUI.Font.Weight.bold)
                             .foregroundColor(getTextColor())
                         
-                        Text("已达到最高等级")
-                            .font(.headline)
+                        SUI.Text("已达到最高等级")
+                            .font(SUI.Font.headline)
                             .foregroundColor(getTextColor().opacity(0.7))
                     }
                     .padding()
@@ -226,8 +270,8 @@ struct TimeStopAchievementDetailView: View {
                 }
                 
                 // 成就提示
-                Text(type.achievementSuggestion(for: level))
-                    .font(.subheadline)
+                SUI.Text(type.levelSuggestion(level))
+                    .font(SUI.Font.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundColor(getTextColor().opacity(0.7))
                     .padding()
@@ -240,7 +284,7 @@ struct TimeStopAchievementDetailView: View {
         }
         .navigationBarTitle("\(type.name)成就", displayMode: .inline)
         .navigationBarBackButtonHidden(true)
-        .navigationBarItems(leading: BackButton(color: .white))
+        .navigationBarItems(leading: BackButton(color: SUI.Color.white))
         .background(
             // 用主题响应背景
             getBackgroundGradient()
@@ -248,9 +292,9 @@ struct TimeStopAchievementDetailView: View {
         )
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Text("\(type.name)成就")
-                    .font(.headline)
-                    .foregroundColor(.white)
+                SUI.Text("\(type.name)成就")
+                    .font(SUI.Font.headline)
+                    .foregroundColor(SUI.Color.white)
             }
         }
         .toolbarBackground(getHeaderColor(), for: .navigationBar)
@@ -265,35 +309,35 @@ struct TimeStopAchievementDetailView: View {
     }
     
     // 获取页眉背景颜色
-    private func getHeaderColor() -> Color {
+    private func getHeaderColor() -> SUI.Color {
         switch themeManager.currentTheme {
         case .classic:
-            return Color(hexCode: "0C4A45")  // 墨绿色
+            return SUI.Color(hex: "0C4A45")  // 墨绿色
         case .elegantPurple:
-            return Color(hexCode: "483D8B")  // 深紫色
+            return SUI.Color(hex: "483D8B")  // 深紫色
         }
     }
     
     // 根据主题获取背景渐变
-    private func getBackgroundGradient() -> LinearGradient {
+    private func getBackgroundGradient() -> SUI.LinearGradient {
         switch themeManager.currentTheme {
         case .classic:
-            return LinearGradient(
-                gradient: Gradient(
+            return SUI.LinearGradient(
+                gradient: SUI.Gradient(
                     colors: [
-                        Color.black,
-                        Color.black.opacity(0.9)
+                        SUI.Color.black,
+                        SUI.Color.black.opacity(0.9)
                     ]
                 ),
                 startPoint: .top,
                 endPoint: .bottom
             )
         case .elegantPurple:
-            return LinearGradient(
-                gradient: Gradient(
+            return SUI.LinearGradient(
+                gradient: SUI.Gradient(
                     colors: [
-                        Color(hexCode: "E6E6FA"),  // 淡紫色
-                        Color(hexCode: "F8F7FF")   // 淡雅白紫色
+                        SUI.Color(hex: "E6E6FA"),  // 淡紫色
+                        SUI.Color(hex: "F8F7FF")   // 淡雅白紫色
                     ]
                 ),
                 startPoint: .top,
@@ -303,80 +347,51 @@ struct TimeStopAchievementDetailView: View {
     }
     
     // 根据主题获取卡片背景色
-    private func getCardBackgroundColor() -> Color {
+    private func getCardBackgroundColor() -> SUI.Color {
         switch themeManager.currentTheme {
         case .classic:
-            return Color(hexCode: "222222")  // 深灰色
+            return SUI.Color(hex: "222222")  // 深灰色
         case .elegantPurple:
-            return Color.white  // 纯白色
+            return SUI.Color.white  // 纯白色
         }
     }
     
     // 根据主题获取文本颜色
-    private func getTextColor() -> Color {
+    private func getTextColor() -> SUI.Color {
         switch themeManager.currentTheme {
         case .classic:
-            return .white
+            return SUI.Color.white
         case .elegantPurple:
-            return Color(hexCode: "483D8B")  // 暗紫色
+            return SUI.Color(hex: "483D8B")  // 暗紫色
         }
     }
     
-    // 获取返回按钮颜色
-    private func getButtonColor() -> Color {
+    // 获取按钮颜色
+    private func getButtonColor() -> SUI.Color {
         switch themeManager.currentTheme {
         case .classic:
-            return .black
+            return SUI.Color.black
         case .elegantPurple:
-            return Color(hexCode: "8A2BE2")  // 深紫色
+            return SUI.Color(hex: "8A2BE2")  // 深紫色
         }
     }
 }
 
 // 自定义返回按钮
-struct BackButton: View {
+fileprivate struct BackButton: SUI.View {
     @Environment(\.presentationMode) var presentationMode
-    var color: Color = .black
+    var color: SUI.Color = .black
     
-    var body: some View {
-        Button(action: {
+    var body: some SUI.View {
+        SUI.Button(action: {
             presentationMode.wrappedValue.dismiss()
         }) {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left")
-                Text("返回")
+            SUI.HStack(spacing: 4) {
+                SUI.Image(systemName: "chevron.left")
+                SUI.Text("返回")
             }
             .foregroundColor(color)
         }
-    }
-}
-
-// 颜色扩展，用于创建十六进制颜色
-extension Color {
-    // 使用不同的方法名以避免冲突
-    init(hexCode: String) {
-        let hex = hexCode.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (1, 1, 1, 0)
-        }
-        
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
-        )
     }
 }
 
@@ -384,8 +399,8 @@ extension Color {
 typealias AchievementDetailView = TimeStopAchievementDetailView
 
 struct TimeStopAchievementDetailView_Previews: PreviewProvider {
-    static var previews: some View {
-        Group {
+    static var previews: some SUI.View {
+        SUI.Group {
             TimeStopAchievementDetailView(type: AchievementType.work, level: 3, minutes: 150)
                 .environmentObject(ThemeManager())
             

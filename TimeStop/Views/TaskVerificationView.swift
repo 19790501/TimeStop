@@ -331,13 +331,13 @@ struct TaskVerificationView: View {
             stopRecording()
             stopPlaying()
         }
-        .onChange(of: viewModel.selectedVerificationMethod) { oldValue, newValue in
+        .onChange(of: viewModel.selectedVerificationMethod) { newValue in
             // 切换到绘画验证时重新设置提示
             if newValue == .drawing {
                 drawingPrompt = getRandomDrawingPrompt()
             }
         }
-        .onChange(of: remainingTime) { oldValue, newValue in
+        .onChange(of: remainingTime) { newValue in
             if newValue <= 0 {
                 cancelVerificationTimer()
                 
@@ -346,7 +346,7 @@ struct TaskVerificationView: View {
                 }
             }
         }
-        .onChange(of: isRecording) { oldValue, newValue in
+        .onChange(of: isRecording) { newValue in
             if newValue {
                 startRecording()
             } else {

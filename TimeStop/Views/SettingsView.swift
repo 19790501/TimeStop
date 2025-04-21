@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @EnvironmentObject var themeManager: ThemeManager
     @State private var showingLogoutAlert = false
+    @State private var showRingtoneModal = false
     
     var body: some View {
         ZStack {
@@ -77,10 +78,48 @@ struct SettingsView: View {
                             }
                         }
                         .toggleStyle(SwitchToggleStyle(tint: themeManager.colors.primary))
-                        .onChange(of: viewModel.soundEnabled) { oldValue, newValue in
+                        .onChange(of: viewModel.soundEnabled) { newValue in
                             // 直接保存设置，不调用toggleSoundEnabled，避免循环调用
                             UserDefaults.standard.set(newValue, forKey: "soundEnabled")
                         }
+                        
+                        // 分隔线
+                        Divider()
+                            .background(themeManager.colors.text.opacity(0.1))
+                            .padding(.vertical, 8)
+                        
+                        // 铃声选择选项 - 改为点击后弹出弹窗
+                        HStack(spacing: 12) {
+                            Image(systemName: "bell.fill")
+                                .foregroundColor(themeManager.colors.primary)
+                            
+                            Text("倒计时结束铃声")
+                                .font(.system(size: 17))
+                                .foregroundColor(themeManager.colors.text)
+                            
+                            Spacer()
+                            
+                            // 显示当前选择的铃声
+                            Text(viewModel.currentRingtone.name)
+                                .font(.system(size: 15))
+                                .foregroundColor(themeManager.colors.secondaryText)
+                                .padding(.trailing, 4)
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14))
+                                .foregroundColor(themeManager.colors.secondaryText)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if viewModel.soundEnabled {
+                                // 播放按钮音效
+                                viewModel.playButtonSound()
+                                // 显示铃声选择弹窗
+                                showRingtoneModal = true
+                            }
+                        }
+                        .disabled(!viewModel.soundEnabled)
+                        .opacity(viewModel.soundEnabled ? 1.0 : 0.5)
                     }
                     .padding(20)
                     .background(themeManager.colors.secondaryBackground)
@@ -168,6 +207,99 @@ struct SettingsView: View {
         } message: {
             Text("确定要退出登录吗？")
         }
+        .sheet(isPresented: $showRingtoneModal) {
+            RingtoneSelectionView(
+                selectedRingtoneID: viewModel.selectedRingtoneID,
+                ringtones: viewModel.availableRingtones,
+                onSelect: { id in
+                    viewModel.selectRingtone(id: id)
+                    viewModel.playButtonSound()
+                    showRingtoneModal = false
+                },
+                onPreview: { id in
+                    viewModel.playRingtoneSample(id: id)
+                },
+                onDismiss: {
+                    showRingtoneModal = false
+                }
+            )
+            .environmentObject(themeManager)
+        }
+    }
+}
+
+// 铃声选择弹窗
+struct RingtoneSelectionView: View {
+    var selectedRingtoneID: String
+    var ringtones: [AppViewModel.Ringtone]
+    var onSelect: (String) -> Void
+    var onPreview: (String) -> Void
+    var onDismiss: () -> Void
+    
+    @EnvironmentObject var themeManager: ThemeManager
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                // 固定使用白色背景，确保内容清晰可见
+                Color.white
+                    .edgesIgnoringSafeArea(.all)
+                
+                List {
+                    ForEach(ringtones) { ringtone in
+                        HStack {
+                            // 试听按钮
+                            Button(action: {
+                                onPreview(ringtone.id)
+                            }) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(themeManager.colors.primary)
+                                    .padding(5)
+                            }
+                            .buttonStyle(BorderlessButtonStyle())
+                            
+                            // 铃声名称
+                            Text(ringtone.name)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundColor(.black) // 固定使用黑色文字
+                            
+                            Spacer()
+                            
+                            // 选中标记 - 所有选项都显示圆形按钮
+                            if ringtone.id == selectedRingtoneID {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(themeManager.colors.primary)
+                                    .font(.system(size: 22))
+                            } else {
+                                Image(systemName: "circle")
+                                    .foregroundColor(Color.gray.opacity(0.5))
+                                    .font(.system(size: 22))
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onSelect(ringtone.id)
+                        }
+                        .padding(.vertical, 8)
+                        .listRowBackground(Color.white) // 固定使用白色背景
+                    }
+                }
+                .listStyle(InsetGroupedListStyle())
+            }
+            .navigationTitle("选择铃声")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") {
+                        onDismiss()
+                    }
+                    .foregroundColor(.black) // 将取消按钮文字颜色改为黑色
+                }
+            }
+        }
+        .preferredColorScheme(.light) // 固定使用浅色模式
     }
 }
 

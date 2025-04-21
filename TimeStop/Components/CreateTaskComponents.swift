@@ -207,7 +207,13 @@ struct SliderTrack: View {
     
     // 计算滑块位置
     private func sliderWidth() -> CGFloat {
-        let percentage = CGFloat(value) / CGFloat(maxValue)
+        // Ensure maxValue is not zero to prevent division by zero
+        let safeMaxValue = max(1, maxValue)
+        
+        // Ensure value is not negative and not greater than maxValue
+        let safeValue = max(0, min(value, safeMaxValue))
+        
+        let percentage = CGFloat(safeValue) / CGFloat(safeMaxValue)
         return min(trackWidth * percentage, trackWidth)
     }
 } 
