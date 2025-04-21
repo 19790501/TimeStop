@@ -914,18 +914,6 @@ class AppViewModel: ObservableObject {
         }
     }
     
-    // 重置并添加测试数据
-    func resetWithTestData() {
-        // 清除当前任务数据
-        tasks.removeAll()
-        
-        // 添加测试数据
-        addDemoTasks()
-        
-        // 更新统计信息
-        updateStatistics(with: tasks)
-    }
-    
     // MARK: - Sound Management
     
     /// 切换音效开关状态
@@ -1257,48 +1245,5 @@ struct RecentAchievement: Hashable {
     
     static func == (lhs: RecentAchievement, rhs: RecentAchievement) -> Bool {
         return lhs.type == rhs.type && lhs.level == rhs.level && lhs.date == rhs.date
-    }
-}
-
-// MARK: - 成就系统测试扩展
-extension AppViewModel {
-    // 用于测试的成就更新方法
-    func updateAchievementForTest(type: AchievementType, minutes: Int) {
-        guard var user = currentUser else { return }
-        
-        // 查找是否已存在此类成就
-        if let index = user.achievements.firstIndex(where: { $0.typeIdentifier == type.rawValue }) {
-            // 更新已有成就的分钟数
-            user.achievements[index].minutes = minutes
-            
-            // 计算解锁的等级
-            let level = type.achievementLevel(for: minutes)
-            let unlockedLevels = Array(1...level)
-            user.achievements[index].unlockedLevels = unlockedLevels
-        } else {
-            // 创建新成就
-            let level = type.achievementLevel(for: minutes)
-            let newAchievement = Achievement(
-                typeIdentifier: type.rawValue,
-                minutes: minutes,
-                unlockedLevels: Array(1...max(1, level))
-            )
-            user.achievements.append(newAchievement)
-        }
-        
-        currentUser = user
-        isAuthenticated = true
-        saveUserData()
-    }
-    
-    // 获取特定类型成就的累计分钟数
-    func achievementMinutes(for type: AchievementType) -> Int {
-        guard let user = currentUser else { return 0 }
-        
-        if let achievement = user.achievements.first(where: { $0.typeIdentifier == type.rawValue }) {
-            return achievement.minutes
-        }
-        
-        return 0
     }
 } 

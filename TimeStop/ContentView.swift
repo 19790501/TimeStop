@@ -216,7 +216,7 @@ struct ContentView: View {
                     .tag(NavigationManager.TabViewSelection.home)
                 
                 // 时间去哪了标签页
-                TimeWhereView_test()
+                TimeWhereView()
                     .environmentObject(viewModel)
                     .environmentObject(themeManager)
                     .environmentObject(userModel)
