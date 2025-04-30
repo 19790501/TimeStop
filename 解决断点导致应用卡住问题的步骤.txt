@@ -1,0 +1,39 @@
+# 解决断点导致应用卡住的步骤
+
+### 问题描述
+应用程序在运行时会显示绿色的"Thread 1: breakpoint 1.1 (1)"信息并卡住。这是因为在ContentView.swift的第254行设置了一个断点。
+
+### 解决方法
+
+1. 打开Xcode项目
+2. 移除所有断点:
+   - 打开Debug菜单
+   - 选择"Breakpoints"
+   - 点击"Remove All Breakpoints"（或者使用快捷键Cmd+Option+/）
+
+3. 清理项目:
+   - 选择Product菜单
+   - 点击"Clean Build Folder"（或使用快捷键Shift+Cmd+K）
+
+4. 重新运行项目:
+   - 点击运行按钮或使用快捷键Cmd+R
+
+### 如果问题仍然存在
+
+1. 手动检查ContentView.swift的254行附近是否有断点标记（左侧边缘的蓝色箭头标记）
+2. 如果看到断点标记，右键点击并选择"Delete Breakpoint"
+
+### 已修复的代码问题
+
+1. 已修复ContentView.swift中的TabView滑动问题
+2. 简化了TabView结构，避免使用复杂的条件修饰符
+3. 改进了环境变量的使用方式
+4. 移除了TimeStopApp.swift中的强制类型转换
+
+### 建议
+
+重启Xcode有时也能解决断点相关的问题。如果以上步骤都不起作用，请尝试:
+
+1. 完全退出Xcode
+2. 重新打开项目
+3. 按照上述步骤再次尝试 

@@ -138,6 +138,70 @@ class NavigationManager: ObservableObject {
             }
         }
     }
+    
+    // 添加直接导航到验证界面的方法
+    func navigateToVerification() {
+        // 确保在主线程上执行UI更新
+        DispatchQueue.main.async {
+            print("NavigationManager: 直接导航到验证界面")
+            
+            // 先确保其他模态都关闭
+            self.isShowingFocusTimer = false
+            self.isShowingCompletion = false
+            self.isShowingAchievement = false
+            self.isShowingWelcome = false
+            
+            // 然后才显示验证界面，避免冲突
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.isShowingVerification = true
+                    self.activeScreen = .verification
+                }
+            }
+        }
+    }
+    
+    // 添加直接导航到计时器界面的方法
+    func navigateToTimer() {
+        // 确保在主线程上执行UI更新
+        DispatchQueue.main.async {
+            print("NavigationManager: 直接导航到计时器界面")
+            
+            // 先确保其他模态都关闭
+            self.isShowingVerification = false
+            self.isShowingCompletion = false
+            self.isShowingAchievement = false
+            self.isShowingWelcome = false
+            
+            // 然后才显示计时器界面，避免冲突
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.isShowingFocusTimer = true
+                    self.activeScreen = .focusTimer
+                }
+            }
+        }
+    }
+    
+    // 添加直接导航到任务列表界面的方法
+    func navigateToTaskList() {
+        // 确保在主线程上执行UI更新
+        DispatchQueue.main.async {
+            print("NavigationManager: 直接导航到任务列表界面")
+            
+            // 关闭所有模态
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self.isShowingFocusTimer = false
+                self.isShowingVerification = false
+                self.isShowingCompletion = false
+                self.isShowingAchievement = false
+                self.isShowingWelcome = false
+                
+                self.activeScreen = .home
+                self.selectedTab = .home
+            }
+        }
+    }
 }
 
 // Extension to simplify bindings to specific screens

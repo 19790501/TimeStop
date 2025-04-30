@@ -25,14 +25,14 @@ struct StartTaskButtonContent: View {
         .shadow(color: Color(red: 0.2, green: 0.2, blue: 0.2).opacity(0.3), radius: 10, x: 0, y: 8)
         .shadow(color: Color(red: 0.25, green: 0.25, blue: 0.25).opacity(0.2), radius: 15, x: 0, y: 12)
         .overlay(
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.white.opacity(0.9), lineWidth: 2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.white, lineWidth: 1.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 23))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .scaleEffect(isButtonPressed ? 0.92 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isButtonPressed)
     }
@@ -45,7 +45,7 @@ struct StartTaskButtonBackground: View {
     var body: some View {
         ZStack {
             // 基础玻璃效果
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(AppColors.pureBlack)
             
             // 玻璃高光效果
@@ -70,7 +70,7 @@ struct StartTaskButtonBackground: View {
             innerHighlightRing()
             
             // 基础背景效果
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.white.opacity(0.3))
                 .blur(radius: 5)
             
@@ -83,7 +83,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func glassHighlightEffect() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .fill(
                 LinearGradient(
                     gradient: Gradient(colors: [
@@ -100,7 +100,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func glassEdgeHighlight() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .stroke(
                 LinearGradient(
                     gradient: Gradient(colors: [
@@ -117,7 +117,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func innerGlowEffect() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .fill(
                 RadialGradient(
                     gradient: Gradient(colors: [
@@ -135,7 +135,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func dynamicLightEffect() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .fill(
                 LinearGradient(
                     gradient: Gradient(colors: [
@@ -157,7 +157,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func topHighlightLine() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .stroke(
                 LinearGradient(
                     gradient: Gradient(colors: [
@@ -174,7 +174,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func bottomHighlightLine() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .stroke(
                 LinearGradient(
                     gradient: Gradient(colors: [
@@ -191,7 +191,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func innerHighlightRing() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .stroke(
                 LinearGradient(
                     gradient: Gradient(colors: [
@@ -209,32 +209,32 @@ struct StartTaskButtonBackground: View {
     
     private func additionalBackgroundShadows() -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.black.opacity(0.2))
                 .blur(radius: 3)
                 .offset(y: 2)
             
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.white.opacity(0.2))
                 .blur(radius: 2)
                 .offset(y: -1)
             
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color(red: 0.12, green: 0.12, blue: 0.12).opacity(0.5))
                 .blur(radius: 4)
                 .offset(y: 3)
             
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color(red: 0.08, green: 0.08, blue: 0.08).opacity(0.3))
                 .blur(radius: 6)
                 .offset(y: 5)
             
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color(red: 0.05, green: 0.05, blue: 0.05).opacity(0.2))
                 .blur(radius: 8)
                 .offset(y: 8)
             
-            RoundedRectangle(cornerRadius: 23)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color(red: 0.02, green: 0.02, blue: 0.02).opacity(0.15))
                 .blur(radius: 10)
                 .offset(y: 12)
@@ -242,7 +242,7 @@ struct StartTaskButtonBackground: View {
     }
     
     private func ambientLightEffect() -> some View {
-        RoundedRectangle(cornerRadius: 23)
+        RoundedRectangle(cornerRadius: 12)
             .fill(
                 RadialGradient(
                     gradient: Gradient(colors: [

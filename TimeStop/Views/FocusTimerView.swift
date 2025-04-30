@@ -556,7 +556,7 @@ struct TimeAdjustmentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Color.black.opacity(0.2))
                 )
                 

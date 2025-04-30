@@ -33,7 +33,7 @@ struct AchievementCollectionView: View {
             ScrollView {
                 achievementsList
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 80)
             }
         }
         .padding(.top)
@@ -256,20 +256,22 @@ struct AchievementCollectionView: View {
         let filteredAchievements = getFilteredAchievements()
         
         if filteredAchievements.isEmpty {
-            return emptyStateView
+            return AnyView(emptyStateView)
         } else {
             // 使用LazyVGrid实现两列正方形布局
-            return LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
-                ],
-                spacing: 10
-            ) {
-                ForEach(filteredAchievements) { achievement in
-                    AchievementCard(achievement: achievement)
+            return AnyView(
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 10),
+                        GridItem(.flexible(), spacing: 10)
+                    ],
+                    spacing: 10
+                ) {
+                    ForEach(filteredAchievements) { achievement in
+                        AchievementCard(achievement: achievement)
+                    }
                 }
-            }
+            )
         }
     }
     

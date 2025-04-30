@@ -11,9 +11,9 @@ TimeStop应用通过任务追踪、专注模式、成就系统和数据分析等
 ## 安装指南
 
 ### 系统要求
-- iOS 15.0或更高版本
-- Xcode 14.0或更高版本
-- Swift 5.0
+- iOS 16.6或更高版本
+- Xcode 15.0或更高版本
+- Swift 5.9
 
 ### 安装步骤
 1. 克隆仓库到本地：
@@ -44,7 +44,7 @@ open TimeStop.xcodeproj
 
 ### 3. 成就系统
 - 8种成就类型，对应不同的任务类别
-- 6级成就解锁系统，激励长期使用
+- 7级成就解锁系统，激励长期使用
 - 视觉化的成就展示和进度跟踪
 - 成就解锁通知和奖励
 
@@ -87,19 +87,24 @@ open TimeStop.xcodeproj
 ```
 TimeStop/
 ├── Models/              # 数据模型
-│   ├── Task.swift       # 任务模型
-│   ├── User.swift       # 用户模型
-│   └── AchievementSystem/ # 成就系统相关模型
+│   ├── TaskModel.swift  # 任务模型
+│   └── AchievementModels.swift # 成就系统相关模型
 ├── Views/               # 视图组件
 │   ├── AuthView.swift   # 认证视图
 │   ├── CreateTaskView.swift # 创建任务视图
 │   ├── FocusTimerView.swift # 专注计时器视图
+│   ├── TaskVerificationView.swift # 任务验证视图
+│   ├── TimeWhereView.swift # 时间去向分析视图
+│   ├── AchievementView.swift # 成就系统视图
 │   └── SettingsView.swift # 设置视图
 ├── ViewModels/          # 视图模型
 │   └── AppViewModel.swift # 主应用程序视图模型
-└── Utils/               # 工具类和辅助功能
-    ├── ThemeManager.swift # 主题管理器
-    └── Notification/     # 通知相关功能
+├── Utils/               # 工具类和辅助功能
+│   ├── ThemeManager.swift # 主题管理器
+│   └── Extensions/      # 扩展方法
+├── Components/          # 可复用组件
+├── Shared/              # 共享模型和功能
+└── Resources/           # 资源文件
 ```
 
 ## 相关文档
@@ -108,6 +113,15 @@ TimeStop/
 - [脚本说明文档](./scripts/README.md) - 项目相关脚本工具的使用说明
 
 ## 最近更新
+
+### 1.3.0 (2024-04-23)
+- 修复了TimeWhereView视图中的类型不匹配错误
+- 优化了TaskVerificationView录音功能，解决了AVAudioRecorder导致的应用卡顿问题
+- 添加了周度和月度时间分析总结视图，提供更详细的时间利用分析
+- 改进了详细建议功能，为用户提供更精准的时间管理建议 
+- 完善了成就系统界面，优化了视觉效果和用户体验
+- 添加了任务详情页面，支持查看任务类型的详细统计信息
+- 修复了多个UI视图的渲染问题和性能优化
 
 ### 1.2.0 (2023-06-01)
 - 添加了五种倒计时结束铃声选择功能
@@ -131,6 +145,6 @@ TimeStop/
 
 ## 联系方式
 
-项目维护者 - 您的姓名 - your.email@example.com
+项目维护者 - SamueL - your.email@example.com
 
 项目链接: [https://github.com/yourusername/TimeStop](https://github.com/yourusername/TimeStop)

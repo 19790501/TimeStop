@@ -1,5 +1,34 @@
 import SwiftUI
-import Foundation
+import CoreLocation
+
+// Add View extension for eraseToAnyView() method
+extension View {
+    func eraseToAnyView() -> AnyView {
+        return AnyView(self)
+    }
+}
+
+// TODO: Move nested extensions to file level
+// TODO: Move extension TimeWhereView from line 2835 to file level
+// TODO: Move extension View from line 3861 to file level
+
+// 任务类型统计结构
+struct TaskTypeStat: Equatable {
+    let type: String
+    let count: Int
+    let minutes: Int
+    let originalMinutes: Int
+    let adjustmentMinutes: Int
+    
+    // 新增：终止任务相关数据
+    var terminatedCount: Int = 0      // 被终止的任务数量
+    var reducedMinutes: Int = 0       // 因终止而减少的分钟数
+    
+    // 实现Equatable协议的静态方法
+    static func == (lhs: TaskTypeStat, rhs: TaskTypeStat) -> Bool {
+        return lhs.type == rhs.type
+    }
+}
 
 // 时间分析摘要数据结构
 struct TimeAnalysisSummary {
@@ -26,6 +55,15 @@ struct TimeAnalysisSummary {
     var trendingDownTypes: [(type: String, decreasePercentage: Double)] = []
     var mostConsistentType: String = ""
     var leastConsistentType: String = ""
+}
+
+// 时间范围枚举定义
+enum TimeRange: String, CaseIterable, Identifiable {
+    case today = "今日"
+    case week = "本周"
+    case month = "本月"
+    
+    var id: String { self.rawValue }
 }
 
 // 角色标准数据结构
@@ -119,6 +157,13 @@ struct TimeWhereView: View {
     @State private var isGeneratingData = false
     @State private var generationProgress: Double = 0
     @State private var cancelGeneration = false
+    
+    // 添加数据刷新时间相关变量
+    @State private var lastDailyRefresh: Date?
+    @State private var lastWeeklyRefresh: Date?
+    @State private var lastMonthlyRefresh: Date?
+    @State private var refreshTimer: Timer?
+    @State private var cachedTasksForSelectedRange: [Task] = []
     
     // 角色定义
     let roleStandards: [RoleStandard] = [
@@ -428,8 +473,8 @@ struct TimeWhereView: View {
                 // 统计终止的任务
                 let terminatedTasks = tasksOfThisType.filter { task in task.isTerminated }
                 let terminatedCount = terminatedTasks.count
-                let reducedMinutes = terminatedTasks.reduce(0) { result, task in 
-                    result + abs(task.timeAdjustments.filter { adjustment in adjustment < 0 }.reduce(0, +)) 
+                let reducedMinutes = terminatedTasks.reduce(0) { result, task in
+                    result + abs(task.timeAdjustments.filter { adjustment in adjustment < 0 }.reduce(0, +))
                 }
                 
                 var stat = TaskTypeStat(
@@ -462,26 +507,97 @@ struct TimeWhereView: View {
                 
                 headerView
                 
-                timeRangeSelector
-                    .padding(.bottom, 8)
+                // 使用原始时间范围选择器，但添加提示
+                HStack(spacing: 20) {
+                    ForEach(TimeRange.allCases) { range in
+                        Button(action: {
+                            selectedRange = range
+                        }) {
+                            Text(range.rawValue)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(selectedRange == range ? 
+                                    (themeManager.currentTheme == .classic ? Color.black : themeManager.colors.primary) : 
+                                    themeManager.colors.secondaryText)
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 18)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .fill(selectedRange == range ? themeManager.colors.primary.opacity(0.15) : Color.gray.opacity(0.05))
+                                        .shadow(color: selectedRange == range ? themeManager.colors.primary.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16)
+                                        .stroke(
+                                            selectedRange == range ? 
+                                                (themeManager.currentTheme == .classic ? Color(hex: "0C4A45") : themeManager.colors.primary) : 
+                                                Color.gray.opacity(0.2), 
+                                            lineWidth: selectedRange == range ? 1.5 : 1
+                                        )
+                                )
+                        }
+                        .help(getRefreshTimeTooltip(for: range))
+                        .scaleEffect(selectedRange == range ? 1.05 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedRange)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 6)
+                .padding(.bottom, 16)
                 
-                if tasksForSelectedRange.isEmpty {
+                if displayTasksForSelectedRange.isEmpty {
                     emptyStateView
                 } else {
                     mainContentView
                 }
             }
-            .onAppear {
-                print("时间去哪了页面加载: 任务总数 \(appViewModel.tasks.count)")
+        }
+        .sheet(isPresented: $showTaskDetail) {
+            if let taskType = selectedTaskType {
+                TaskDetailView(taskType: taskType)
+                    .environmentObject(appViewModel)
+                    .environmentObject(themeManager)
             }
-            .sheet(isPresented: $showDetailedSuggestion) {
-                DetailedSuggestionView(
-                    taskType: currentTaskType,
-                    suggestion: detailedSuggestion,
-                    isPresented: $showDetailedSuggestion
-                )
+        }
+        .onAppear {
+            // 首次加载时检查数据并刷新
+            checkAndRefreshData()
+            
+            // 设置1分钟检查一次刷新计时器
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+                checkAndRefreshData()
+            }
+        }
+        .onDisappear {
+            // 清理计时器
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        }
+        .onChange(of: selectedRange) { newRange in
+            // 切换时间范围时刷新数据
+            loadTasksForCurrentRange()
+        }
+        .sheet(isPresented: $showDetailedSuggestion) {
+            DetailedSuggestionView(
+                taskType: currentTaskType,
+                suggestion: detailedSuggestion,
+                isPresented: $showDetailedSuggestion
+            )
+            .environmentObject(themeManager)
+        }
+        .sheet(isPresented: $showWeeklySummary) {
+            WeeklySummaryView(summary: generateWeeklySummary())
                 .environmentObject(themeManager)
-            }
+        }
+        .sheet(isPresented: $showMonthlySummary) {
+            MonthlySummaryView(summary: generateMonthlySummary())
+                .environmentObject(themeManager)
+        }
+        .alert(isPresented: $showAlert) {
+            Alert(
+                title: Text("数据已生成"),
+                message: Text("测试数据已成功创建，现在可以查看数据统计了。"),
+                dismissButton: .default(Text("好的"))
+            )
         }
     }
     
@@ -584,11 +700,11 @@ struct TimeWhereView: View {
                             .foregroundColor(themeManager.colors.secondaryText)
                     }
                 } else {
-                Text("点击页面右上角闪电⚡按钮生成测试数据")
-                    .font(.callout)
-                    .foregroundColor(themeManager.colors.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    Text("点击页面右上角闪电⚡按钮生成测试数据")
+                        .font(.callout)
+                        .foregroundColor(themeManager.colors.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
             }
             Spacer()
@@ -597,48 +713,67 @@ struct TimeWhereView: View {
     
     // 主要内容视图
     private var mainContentView: some View {
-        VStack(spacing: 10) {
-            dateRangeSelector
-                .padding(.bottom, 6)
-            
-            ScrollView {
-                VStack(spacing: 0) { // 将spacing改为0，手动控制间距和分隔符
-                    let taskTypes = getTaskTypes()
-                    
-                    ForEach(Array(taskTypes.enumerated()), id: \.element) { index, taskType in
-                        VStack(spacing: 0) {
-                            taskTypeCard(taskType: taskType)
-                                .padding(.horizontal, 32) // 增加任务卡片水平内边距，从24增加到32
-                                .padding(.top, 7) // 顶部保持不变
-                                .padding(.bottom, 4) // 减少底部内边距，原来是7，减少3点变为4
-                            
-                            // 在非最后一个任务类型后添加分隔符
-                            if index < taskTypes.count - 1 {
-                                Divider()
-                                    .background(themeManager.colors.secondaryText.opacity(0.15))
-                                    .padding(.horizontal, 48) // 增加分隔线水平内边距，从40增加到48
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 10) {
+                dateRangeSelector
+                    .padding(.bottom, 6)
+                
+                ScrollView {
+                    VStack(spacing: 0) { // 将spacing改为0，手动控制间距和分隔符
+                        let taskTypes = getTaskTypes()
+                        
+                        ForEach(Array(taskTypes.enumerated()), id: \.element) { index, taskType in
+                            VStack(spacing: 0) {
+                                taskTypeCard(taskType: taskType)
+                                    .padding(.horizontal, 32) // 增加任务卡片水平内边距，从24增加到32
+                                    .padding(.top, 7) // 顶部保持不变
+                                    .padding(.bottom, 4) // 减少底部内边距，原来是7，减少3点变为4
+                                
+                                // 在非最后一个任务类型后添加分隔符
+                                if index < taskTypes.count - 1 {
+                                    Divider()
+                                        .background(themeManager.colors.secondaryText.opacity(0.15))
+                                        .padding(.horizontal, 48) // 增加分隔线水平内边距，从40增加到48
+                                }
                             }
                         }
                     }
+                    .padding(.top, 6)
+                    .padding(.bottom, 80) // 增加底部内边距，确保内容不会被底部浮动按钮遮挡
+                }
+                .refreshable {
+                    // 手动刷新数据
+                    loadTasksForCurrentRange()
                     
-                    // 添加报告查看按钮，仅在查看非今天的数据时显示
-                    if selectedRange != .today {
-                        summaryReportButton
-                            .padding(.horizontal, 32) // 增加按钮水平内边距，从24增加到32
-                            .padding(.top, 20) // 增加与上方内容的间距
-                            .padding(.bottom, 10)
+                    // 更新刷新时间记录
+                    let now = Date()
+                    switch selectedRange {
+                    case .today:
+                        lastDailyRefresh = now
+                    case .week:
+                        lastWeeklyRefresh = now
+                    case .month:
+                        lastMonthlyRefresh = now
                     }
                 }
-                .padding(.top, 6)
-                .padding(.bottom, 30)
             }
-        }
-        .background(themeManager.colors.background)
-        .sheet(isPresented: $showWeeklySummary) {
-            WeeklySummaryView(summary: currentWeeklySummary)
-        }
-        .sheet(isPresented: $showMonthlySummary) {
-            MonthlySummaryView(summary: currentMonthlySummary)
+            .background(themeManager.colors.background)
+            
+            // 底部浮动按钮 - 仅在查看非今天的数据时显示
+            if selectedRange != .today {
+                VStack(spacing: 0) {
+                    Divider()
+                        .background(themeManager.colors.secondaryText.opacity(0.2))
+                    
+                    summaryReportButton
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 12)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: selectedRange)
+                .background(themeManager.colors.background.opacity(0.8))
+                .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: -3)
+            }
         }
     }
     
@@ -682,7 +817,7 @@ struct TimeWhereView: View {
                                     Text("\(getTaskCountByType(taskType))")
                                         .font(.system(size: 10, weight: .semibold))
                                         .foregroundColor(themeManager.colors.text)
-                                        
+                                    
                                     Text("次")
                                         .font(.system(size: 8))
                                         .foregroundColor(themeManager.colors.secondaryText)
@@ -721,9 +856,9 @@ struct TimeWhereView: View {
                     .padding(.horizontal, 8)
                     .background(
                         Capsule()
-                            .fill(themeManager.currentTheme == .elegantPurple ? 
-                                  Color(hex: "8A2BE2").opacity(0.9) : 
-                                  Color(hex: "0C4A45").opacity(0.9))
+                            .fill(themeManager.currentTheme == .elegantPurple ?
+                                  Color(hex: "8A2BE2").opacity(0.9) :
+                                    Color(hex: "0C4A45").opacity(0.9))
                     )
             }
             .padding(.horizontal, 14)
@@ -780,10 +915,10 @@ struct TimeWhereView: View {
     }
     
     // 任务类型卡片
-    func taskTypeCard(taskType: String) -> some View {
+    func taskTypeCard(taskType: String) -> AnyView {
         let stats = getTaskTypesStats()
         guard let stat = stats.first(where: { $0.type == taskType }) else {
-            return EmptyView().eraseToAnyView()
+            return AnyView(EmptyView())
         }
         
         let percentage = Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100
@@ -796,138 +931,139 @@ struct TimeWhereView: View {
         // 生成针对性建议
         let suggestion = getSuggestionForTaskType(taskType: taskType, deviationType: deviationType, adjustmentMinutes: stat.adjustmentMinutes, terminatedCount: stat.terminatedCount)
         
-        return VStack(spacing: 4) {
-            // 主卡片内容 - 使用固定高度
-            HStack(spacing: 0) {
-                // 左侧：任务图标和名称 - 完全固定位置和尺寸
-                HStack(alignment: .center, spacing: 8) {
-                    // 任务类型图标
-                    Image(systemName: getIconForTaskType(taskType))
-                        .font(.system(size: 14))
-                        .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(getColorForTaskType(taskType))
-                        )
-                    
-                    // 任务类型文本 - 固定宽度
-                    Text(taskType)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(themeManager.colors.text)
-                        .lineLimit(1)
-                        .frame(width: 40, alignment: .leading)
-                }
-                .frame(width: 90, alignment: .leading)
-                .padding(.leading, 14)
-                
-                // 进度区域 - 固定宽度
-                HStack(alignment: .center, spacing: 8) {
-                    // 进度条和相关信息 - 垂直排列
-                    VStack(alignment: .leading, spacing: 4) {
-                        // 进度条和百分比 - 水平排列
-                        HStack(alignment: .center, spacing: 8) {
-                            // 使用完全固定尺寸的进度条
-                            ZStack(alignment: .leading) {
-                                // 背景条 - 固定尺寸
-                                Capsule()
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(width: 60, height: 6)
-                                
-                                // 进度条 - 根据百分比计算宽度
-                                Capsule()
-                                    .fill(Color.black)
-                                    .frame(width: min(60 * CGFloat(percentage) / 100.0, 60), height: 6)
-                            }
-                            .frame(width: 60, height: 6)
-
-                            // 百分比文字
-                            Text(String(format: "%.1f%%", percentage))
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(Color.black)
-                                .frame(width: 55, alignment: .trailing)
-                                .lineLimit(1)
-                            
-                            // 状态图标
-                            Image(systemName: getStatusIcon(deviationType))
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(getStatusColor(deviationType))
-                                .frame(width: 20)
-                        }
+        return AnyView(
+            VStack(spacing: 4) {
+                // 主卡片内容 - 使用固定高度
+                HStack(spacing: 0) {
+                    // 左侧：任务图标和名称 - 完全固定位置和尺寸
+                    HStack(alignment: .center, spacing: 8) {
+                        // 任务类型图标
+                        Image(systemName: getIconForTaskType(taskType))
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(getColorForTaskType(taskType))
+                            )
                         
-                        // 次数和总时长
-                        Text("\(stat.count)次/\(formatMinutes(stat.minutes))")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color.black.opacity(0.8))
-                            .frame(width: 150, alignment: .leading)
+                        // 任务类型文本 - 固定宽度
+                        Text(taskType)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(themeManager.colors.text)
                             .lineLimit(1)
+                            .frame(width: 40, alignment: .leading)
                     }
-                }
-                .frame(width: 150)
-                
-                Spacer()
-                
-                // 右侧：调整信息
-                VStack(alignment: .leading, spacing: 2) { // 改为左对齐
-                    // 调整和终止信息
-                    if stat.adjustmentMinutes != 0 || stat.terminatedCount > 0 {
-                        // 先显示终止信息
-                        if stat.terminatedCount > 0 {
-                            Text("终止: \(stat.terminatedCount)次")
-                                .font(.system(size: 11))
-                                .foregroundColor(.black)
+                    .frame(width: 90, alignment: .leading)
+                    .padding(.leading, 14)
+                    
+                    // 进度区域 - 固定宽度
+                    HStack(alignment: .center, spacing: 8) {
+                        // 进度条和相关信息 - 垂直排列
+                        VStack(alignment: .leading, spacing: 4) {
+                            // 进度条和百分比 - 水平排列
+                            HStack(alignment: .center, spacing: 8) {
+                                // 使用完全固定尺寸的进度条
+                                ZStack(alignment: .leading) {
+                                    // 背景条 - 固定尺寸
+                                    Capsule()
+                                        .fill(Color.gray.opacity(0.2))
+                                        .frame(width: 60, height: 6)
+                                    
+                                    // 进度条 - 根据百分比计算宽度
+                                    Capsule()
+                                        .fill(Color.black)
+                                        .frame(width: min(60 * CGFloat(percentage) / 100.0, 60), height: 6)
+                                }
+                                .frame(width: 60, height: 6)
+                                
+                                // 百分比文字
+                                Text(String(format: "%.1f%%", percentage))
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(Color.black)
+                                    .frame(width: 55, alignment: .trailing)
+                                    .lineLimit(1)
+                                
+                                // 状态图标
+                                Image(systemName: getStatusIcon(deviationType))
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(getStatusColor(deviationType))
+                                    .frame(width: 20)
+                            }
+                            
+                            // 次数和总时长
+                            Text("\(stat.count)次/\(formatMinutes(stat.minutes))")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.black.opacity(0.8))
+                                .frame(width: 150, alignment: .leading)
+                                .lineLimit(1)
                         }
-                        
-                        // 再显示调整信息
-                        if stat.adjustmentMinutes != 0 {
-                            Text("调整: \(formatAdjustment(stat.adjustmentMinutes))")
+                    }
+                    .frame(width: 150)
+                    
+                    Spacer()
+                    
+                    // 右侧：调整信息
+                    VStack(alignment: .leading, spacing: 2) { // 改为左对齐
+                        // 调整和终止信息
+                        if stat.adjustmentMinutes != 0 || stat.terminatedCount > 0 {
+                            // 先显示终止信息
+                            if stat.terminatedCount > 0 {
+                                Text("终止: \(stat.terminatedCount)次")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.black)
+                            }
+                            
+                            // 再显示调整信息
+                            if stat.adjustmentMinutes != 0 {
+                                Text("调整: \(formatAdjustment(stat.adjustmentMinutes))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.black)
+                            }
+                        } else {
+                            // 添加空白占位，保持卡片高度一致
+                            Text(" ")
                                 .font(.system(size: 11))
-                                .foregroundColor(.black)
+                                .foregroundColor(.clear)
                         }
-                    } else {
-                        // 添加空白占位，保持卡片高度一致
-                        Text(" ")
-                            .font(.system(size: 11))
-                            .foregroundColor(.clear)
                     }
+                    .padding(.trailing, 14)
                 }
-                .padding(.trailing, 14)
-            }
-            .frame(height: 60) // 固定卡片高度
-            .background(
-                RoundedRectangle(cornerRadius: 15)
-                    .fill(themeManager.colors.secondaryBackground)
-                    .shadow(color: Color.black.opacity(0.07), radius: 4, x: 0, y: 2)
-            )
-            
-            // 任务建议区域
-            if !suggestion.isEmpty {
-                VStack(alignment: .leading, spacing: 2) { // 使用VStack支持多行显示
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 12))
-                            .foregroundColor(.red)
-                            .padding(.top, 2) // 让图标与第一行文字对齐
-                        
-                        Text(suggestion)
-                            .font(.system(size: 12))
-                            .foregroundColor(themeManager.colors.secondaryText)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true) // 确保文本能够正确换行
-                        
-                        Spacer()
+                .frame(height: 60) // 固定卡片高度
+                .background(
+                    RoundedRectangle(cornerRadius: 15)
+                        .fill(themeManager.colors.secondaryBackground)
+                        .shadow(color: Color.black.opacity(0.07), radius: 4, x: 0, y: 2)
+                )
+                
+                // 任务建议区域
+                if !suggestion.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) { // 使用VStack支持多行显示
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 12))
+                                .foregroundColor(.red)
+                                .padding(.top, 2) // 让图标与第一行文字对齐
+                            
+                            Text(suggestion)
+                                .font(.system(size: 12))
+                                .foregroundColor(themeManager.colors.secondaryText)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true) // 确保文本能够正确换行
+                            
+                            Spacer()
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 6)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 6)
             }
-        }
-        .onTapGesture {
-            currentTaskType = taskType
-            generateDetailedSuggestion(for: stat)
-            showDetailedSuggestion = true
-        }
-        .eraseToAnyView()
+            .onTapGesture {
+                currentTaskType = taskType
+                generateDetailedSuggestion(for: stat)
+                showDetailedSuggestion = true
+            }
+        )
     }
     
     // 获取状态图标
@@ -1173,16 +1309,16 @@ struct TimeWhereView: View {
             return AnyView(
                 HStack {
                     Label(
-                        title: { 
-                            Text(isOverAllocated 
-                                 ? "\(stat.type)时间占比较高(\(String(format: "%.1f", percentage))%)，建议适当控制" 
+                        title: {
+                            Text(isOverAllocated
+                                 ? "\(stat.type)时间占比较高(\(String(format: "%.1f", percentage))%)，建议适当控制"
                                  : "\(stat.type)时间占比较低(\(String(format: "%.1f", percentage))%)，建议适当增加")
-                                .font(.system(size: 13))
-                                .foregroundColor(themeManager.colors.secondaryText)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                            .font(.system(size: 13))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                         },
-                        icon: { 
+                        icon: {
                             Image(systemName: isOverAllocated ? "chart.bar.fill" : "chart.bar")
                                 .font(.system(size: 12))
                                 .foregroundColor(isOverAllocated ? .orange : .blue)
@@ -1196,24 +1332,6 @@ struct TimeWhereView: View {
     }
     
     // MARK: - 数据处理
-    
-    // 任务类型统计结构
-    struct TaskTypeStat: Equatable {
-        let type: String
-        let count: Int
-        let minutes: Int
-        let originalMinutes: Int
-        let adjustmentMinutes: Int
-        
-        // 新增：终止任务相关数据
-        var terminatedCount: Int = 0      // 被终止的任务数量
-        var reducedMinutes: Int = 0       // 因终止而减少的分钟数
-        
-        // 实现Equatable协议的静态方法
-        static func == (lhs: TaskTypeStat, rhs: TaskTypeStat) -> Bool {
-            return lhs.type == rhs.type
-        }
-    }
     
     // 获取所选时间范围的任务
     var tasksForSelectedRange: [Task] {
@@ -1252,6 +1370,15 @@ struct TimeWhereView: View {
         }
     }
     
+    // 使用缓存数据的访问方法
+    private var displayTasksForSelectedRange: [Task] {
+        if !cachedTasksForSelectedRange.isEmpty {
+            return cachedTasksForSelectedRange
+        }
+        // 首次加载或缓存为空时直接获取
+        return tasksForSelectedRange
+    }
+    
     // 获取任务类型统计数据
     func getTaskTypesStats() -> [TaskTypeStat] {
         // 定义任务类型（8类）
@@ -1259,7 +1386,7 @@ struct TimeWhereView: View {
         var stats: [TaskTypeStat] = []
         
         for type in taskTypes {
-            let tasksOfThisType = tasksForSelectedRange.filter { task in task.title == type }
+            let tasksOfThisType = displayTasksForSelectedRange.filter { task in task.title == type }
             let count = tasksOfThisType.count
             if count > 0 {
                 let minutes = tasksOfThisType.reduce(0) { result, task in result + task.duration }
@@ -1269,8 +1396,8 @@ struct TimeWhereView: View {
                 // 统计终止的任务
                 let terminatedTasks = tasksOfThisType.filter { task in task.isTerminated }
                 let terminatedCount = terminatedTasks.count
-                let reducedMinutes = terminatedTasks.reduce(0) { result, task in 
-                    result + abs(task.timeAdjustments.filter { adjustment in adjustment < 0 }.reduce(0, +)) 
+                let reducedMinutes = terminatedTasks.reduce(0) { result, task in
+                    result + abs(task.timeAdjustments.filter { adjustment in adjustment < 0 }.reduce(0, +))
                 }
                 
                 var stat = TaskTypeStat(
@@ -1293,9 +1420,9 @@ struct TimeWhereView: View {
         return stats.sorted { $0.minutes > $1.minutes }
     }
     
-    // 所选时间范围内的总时长
+    // 计算所选范围内的总时间（分钟）
     var totalTimeForSelectedRange: Int {
-        tasksForSelectedRange.reduce(0) { $0 + $1.duration }
+        return displayTasksForSelectedRange.reduce(0) { $0 + $1.duration }
     }
     
     // 平均每个任务的时长
@@ -1451,7 +1578,7 @@ struct TimeWhereView: View {
         
         // 清除之前的测试数据
         appViewModel.tasks.removeAll { task in
-            task.createdAt > Date().addingTimeInterval(-30 * 24 * 60 * 60) && 
+            task.createdAt > Date().addingTimeInterval(-30 * 24 * 60 * 60) &&
             task.note == "测试数据"
         }
         
@@ -1478,7 +1605,7 @@ struct TimeWhereView: View {
         
         // 计算总任务数，用于进度显示
         let totalTaskTypes = taskConfigs.count
-        let totalTasksToCreate = taskConfigs.reduce(0) { $0 + $1.todayCount + min(2, $1.weekCount) + min(1, $1.monthCount) }
+        // 移除未使用的变量
         var tasksCreated = 0
         
         // 在后台线程生成数据
@@ -1492,85 +1619,85 @@ struct TimeWhereView: View {
                     break
                 }
                 
-            let taskType = config.title
-            var minDuration = config.minDuration
-            var maxDuration = config.maxDuration
-            let todayCount = config.todayCount
+                let taskType = config.title
+                var minDuration = config.minDuration
+                var maxDuration = config.maxDuration
+                let todayCount = config.todayCount
                 let weekCount = min(2, config.weekCount) // 限制为最多2个每周任务
                 let monthCount = min(1, config.monthCount) // 限制为最多1个每月任务
-            
-            // 根据选定角色调整测试数据
-                if let standard = self.currentRoleStandard.getStandard(for: taskType) {
-                // 调整数据以反映当前角色标准
-                let lowerBound = Int(standard.min * 60) // 转换为分钟
-                let upperBound = Int(standard.max * 60) // 转换为分钟
                 
+                // 根据选定角色调整测试数据
+                if let standard = self.currentRoleStandard.getStandard(for: taskType) {
+                    // 调整数据以反映当前角色标准
+                    let lowerBound = Int(standard.min * 60) // 转换为分钟
+                    let upperBound = Int(standard.max * 60) // 转换为分钟
+                    
                     // 在基准范围内随机化
                     minDuration = lowerBound
                     maxDuration = upperBound
-                
-                // 确保最小值不小于10分钟
-                minDuration = max(10, minDuration)
-            }
+                    
+                    // 确保最小值不小于10分钟
+                    minDuration = max(10, minDuration)
+                }
                 
                 // 批量创建任务
                 var batchTasks: [Task] = []
-            
-            // 生成今日任务
-            for _ in 0..<todayCount {
+                
+                // 生成今日任务
+                for _ in 0..<todayCount {
                     if self.cancelGeneration { break }
                     
                     if let task = self.createRandomTaskObject(
-                        taskType: taskType, 
-                                minDuration: minDuration, 
-                                maxDuration: maxDuration,
-                                startDate: todayStart, 
-                                endDate: now,
-                                adjustFrequency: config.adjustFrequency,
+                        taskType: taskType,
+                        minDuration: minDuration,
+                        maxDuration: maxDuration,
+                        startDate: todayStart,
+                        endDate: now,
+                        adjustFrequency: config.adjustFrequency,
                         terminateFrequency: config.terminateFrequency
                     ) {
                         batchTasks.append(task)
                         tasksCreated += 1
                     }
-            }
-            
+                }
+                
                 // 生成本周任务(除去今日) - 限制数量
-            let additionalWeekTasks = max(0, weekCount - todayCount)
-            for _ in 0..<additionalWeekTasks {
+                let additionalWeekTasks = max(0, weekCount - todayCount)
+                for _ in 0..<additionalWeekTasks {
                     if self.cancelGeneration { break }
                     
                     if let task = self.createRandomTaskObject(
-                        taskType: taskType, 
-                                minDuration: minDuration, 
-                                maxDuration: maxDuration,
-                                startDate: weekStart, 
-                                endDate: todayStart.addingTimeInterval(-1),
-                                adjustFrequency: config.adjustFrequency,
+                        taskType: taskType,
+                        minDuration: minDuration,
+                        maxDuration: maxDuration,
+                        startDate: weekStart,
+                        endDate: todayStart.addingTimeInterval(-1),
+                        adjustFrequency: config.adjustFrequency,
                         terminateFrequency: config.terminateFrequency
                     ) {
                         batchTasks.append(task)
                         tasksCreated += 1
                     }
-            }
-            
+                }
+                
                 // 生成本月任务(除去本周) - 严格限制数量
                 let additionalMonthTasks = max(0, monthCount)
-            for _ in 0..<additionalMonthTasks {
+                for _ in 0..<additionalMonthTasks {
                     if self.cancelGeneration { break }
                     
                     if let task = self.createRandomTaskObject(
-                        taskType: taskType, 
-                                minDuration: minDuration, 
-                                maxDuration: maxDuration,
-                                startDate: monthStart, 
-                                endDate: weekStart.addingTimeInterval(-1),
-                                adjustFrequency: config.adjustFrequency,
+                        taskType: taskType,
+                        minDuration: minDuration,
+                        maxDuration: maxDuration,
+                        startDate: monthStart,
+                        endDate: weekStart.addingTimeInterval(-1),
+                        adjustFrequency: config.adjustFrequency,
                         terminateFrequency: config.terminateFrequency
                     ) {
                         batchTasks.append(task)
                         tasksCreated += 1
-            }
-        }
+                    }
+                }
                 
                 // 添加到总任务集合
                 allGeneratedTasks.append(contentsOf: batchTasks)
@@ -1602,7 +1729,7 @@ struct TimeWhereView: View {
             }
         }
     }
-
+    
     // 在顶部标题旁添加加载指示器的按钮视图
     private var dataGenerationButton: some View {
         Button(action: {
@@ -1635,7 +1762,7 @@ struct TimeWhereView: View {
                                 Circle()
                                     .strokeBorder(
                                         themeManager.currentTheme == .elegantPurple ?
-                                            Color(hex: "483D8B").opacity(0.4) :
+                                        Color(hex: "483D8B").opacity(0.4) :
                                             Color.clear,
                                         lineWidth: 1.5
                                     )
@@ -1695,7 +1822,7 @@ struct TimeWhereView: View {
         let allTypes = ["会议", "思考", "工作", "阅读", "生活", "运动", "摸鱼", "睡觉"]
         
         // 过滤出当前范围内实际存在的任务类型
-        let existingTypes = Array(Set(tasksForSelectedRange.map { task in task.title }))
+        let existingTypes = Array(Set(displayTasksForSelectedRange.map { task in task.title }))
         
         // 确保只返回有效的8种类型中的任务
         return existingTypes.filter { type in allTypes.contains(type) }
@@ -1703,7 +1830,7 @@ struct TimeWhereView: View {
     
     // 获取特定类型任务的次数
     func getTaskCountByType(_ type: String) -> Int {
-        return tasksForSelectedRange.filter { task in task.title == type }.count
+        return displayTasksForSelectedRange.filter { task in task.title == type }.count
     }
     
     // 格式化时间占比为百分比字符串
@@ -1740,22 +1867,22 @@ struct TimeWhereView: View {
             Text("\(stat.minutes)分钟")
                 .font(.system(size: 11, weight: .regular))
                 .foregroundColor(themeManager.colors.secondaryText)
-                
+            
             // 百分比显示 - 增加视觉层次感
             let percentage = Double(stat.minutes) / Double(totalTimeForSelectedRange) * 100
             Text(String(format: "%.1f%%", percentage))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(
-                    themeManager.currentTheme == .elegantPurple ? 
+                    themeManager.currentTheme == .elegantPurple ?
                     Color(hex: "8A2BE2") : Color(hex: "0C4A45")
                 )
                 .padding(.vertical, 2)
                 .padding(.horizontal, 6)
                 .background(
                     Capsule()
-                        .fill((themeManager.currentTheme == .elegantPurple ? 
-                              Color(hex: "8A2BE2") : Color(hex: "0C4A45"))
-                              .opacity(0.1))
+                        .fill((themeManager.currentTheme == .elegantPurple ?
+                               Color(hex: "8A2BE2") : Color(hex: "0C4A45"))
+                            .opacity(0.1))
                 )
         }
         .padding(.vertical, 6)
@@ -2012,16 +2139,11 @@ struct TimeWhereView: View {
     // 添加报告摘要按钮
     private var summaryReportButton: some View {
         Button(action: {
-            // 安全地显示摘要报告
-            do {
-                if selectedRange == .week {
-                    showWeeklySummary = true
-                } else {
-                    showMonthlySummary = true
-                }
-            } catch {
-                // 如果出现错误，不执行任何操作
-                print("显示摘要报告时发生错误: \(error.localizedDescription)")
+            // 直接显示摘要报告
+            if selectedRange == .week {
+                showWeeklySummary = true
+            } else {
+                showMonthlySummary = true
             }
         }) {
             HStack {
@@ -2029,7 +2151,7 @@ struct TimeWhereView: View {
                 Image(systemName: selectedRange == .week ? "chart.line.uptrend.xyaxis" : "chart.bar.doc.horizontal")
                     .font(.system(size: 16))
                     .foregroundColor(.white)
-                    
+                
                 // 中间文本
                 Text(selectedRange == .week ? "查看周总结分析" : "查看月度时间报告")
                     .font(.system(size: 15, weight: .medium))
@@ -2048,9 +2170,9 @@ struct TimeWhereView: View {
                 ZStack(alignment: .bottom) {
                     // 主背景
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(themeManager.currentTheme == .elegantPurple ? 
-                              Color(hex: "8A2BE2") : 
-                              Color(hex: "0C4A45"))
+                        .fill(themeManager.currentTheme == .elegantPurple ?
+                              Color(hex: "8A2BE2") :
+                                Color(hex: "0C4A45"))
                     
                     // 底部渐变装饰
                     RoundedRectangle(cornerRadius: 14)
@@ -2067,9 +2189,9 @@ struct TimeWhereView: View {
                         .frame(height: 24)
                 }
             )
-            .shadow(color: (themeManager.currentTheme == .elegantPurple ? 
-                           Color(hex: "8A2BE2") : 
-                           Color(hex: "0C4A45")).opacity(0.3),
+            .shadow(color: (themeManager.currentTheme == .elegantPurple ?
+                            Color(hex: "8A2BE2") :
+                                Color(hex: "0C4A45")).opacity(0.3),
                     radius: 5, x: 0, y: 3)
         }
     }
@@ -2130,24 +2252,35 @@ struct TimeWhereView: View {
                     generateAnalysisReport()
                     showDetailedSuggestion = true
                 }) {
-                    HStack(spacing: 4) {
-                        Text("分析报告")
-                            .font(.system(size: 13))
-                            .foregroundColor(themeManager.colors.secondaryText)
-                        
+                    HStack(spacing: 6) {
                         Image(systemName: "chart.bar.xaxis")
-                            .font(.system(size: 13))
-                            .foregroundColor(themeManager.colors.secondaryText)
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                        
+                        Text("分析报告")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
                     }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
                     .background(
-                        Capsule()
-                            .stroke(themeManager.colors.secondaryText.opacity(0.3), lineWidth: 1)
-                            .background(
-                                Capsule()
-                                    .fill(themeManager.colors.secondaryBackground.opacity(0.8))
-                            )
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                themeManager.currentTheme == .classic ? 
+                                    Color(hex: "0C4A45") : 
+                                    themeManager.colors.primary,
+                                themeManager.currentTheme == .classic ? 
+                                    Color(hex: "0C4A45").opacity(0.8) : 
+                                    themeManager.colors.primary.opacity(0.8)
+                            ]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: themeManager.currentTheme == .classic ? 
+                                   Color(hex: "0C4A45").opacity(0.3) : 
+                                   themeManager.colors.primary.opacity(0.3), 
+                                radius: 3, x: 0, y: 2)
                     )
                 }
             }
@@ -2292,7 +2425,7 @@ struct TimeWhereView: View {
         detailedSuggestion = (title, objectiveReasons, subjectiveReasons, suggestions)
         currentTaskType = selectedRole
     }
-
+    
     // 辅助方法：获取上周任务
     private func getPreviousWeekTasks() -> [Task] {
         let calendar = Calendar.current
@@ -2308,7 +2441,7 @@ struct TimeWhereView: View {
             return false
         }
     }
-
+    
     // 辅助方法：获取上月任务
     private func getPreviousMonthTasks() -> [Task] {
         let calendar = Calendar.current
@@ -2331,7 +2464,7 @@ struct TimeWhereView: View {
             return false
         }
     }
-
+    
     // 计算周对比分析
     func calculateWeeklyComparison() -> [String: Double] {
         let currentWeekTasks = getWeekTasks()
@@ -2373,7 +2506,7 @@ struct TimeWhereView: View {
         
         return comparison
     }
-
+    
     // 计算月对比分析
     func calculateMonthlyComparison() -> [String: Double] {
         let currentMonthTasks = getMonthTasks()
@@ -2453,12 +2586,12 @@ struct TimeWhereView: View {
                                     if selectedRange == range {
                                         // 选中状态的按钮设计 - 根据主题选择颜色
                                         RoundedRectangle(cornerRadius: 12)
-                                            .fill(themeManager.currentTheme == .elegantPurple ? 
+                                            .fill(themeManager.currentTheme == .elegantPurple ?
                                                   Color(hex: "8A2BE2") : // 知性紫主题使用深紫色
                                                   Color(hex: "0C4A45")) // 默认主题使用翡翠墨绿色
-                                            .shadow(color: themeManager.currentTheme == .elegantPurple ? 
-                                                    Color(hex: "8A2BE2").opacity(0.4) : 
-                                                    Color(hex: "0C4A45").opacity(0.4), 
+                                            .shadow(color: themeManager.currentTheme == .elegantPurple ?
+                                                    Color(hex: "8A2BE2").opacity(0.4) :
+                                                        Color(hex: "0C4A45").opacity(0.4),
                                                     radius: 5, x: 0, y: 2)
                                     } else {
                                         // 未选中状态的按钮设计
@@ -2490,1100 +2623,1321 @@ struct TimeWhereView: View {
                 .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
         }
     }
-}
-
-// 详细建议视图
-struct DetailedSuggestionView: View {
-    let taskType: String
-    let suggestion: (title: String, objectiveReasons: [String], subjectiveReasons: [String], suggestions: [String])
-    @Binding var isPresented: Bool
-    @EnvironmentObject var themeManager: ThemeManager
     
-    var body: some View {
-        NavigationView {
-            ZStack {
-                themeManager.colors.background.edgesIgnoringSafeArea(.all)
-                
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        // 标题
-                        Text(suggestion.title)
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(themeManager.colors.text)
-                            .padding(.top, 10)
-                        
-                        // 客观因素
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("客观因素")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(themeManager.colors.text)
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(suggestion.objectiveReasons, id: \.self) { reason in
-                                    HStack(alignment: .top, spacing: 10) {
-                                        Image(systemName: "circle.fill")
-                                            .font(.system(size: 6))
-                                            .foregroundColor(themeManager.colors.secondaryText)
-                                            .padding(.top, 6)
-                                        
-                                        Text(reason)
-                                            .font(.system(size: 16))
-                                            .foregroundColor(themeManager.colors.text)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                            }
-                            .padding(.leading, 4)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(themeManager.colors.secondaryBackground)
-                        )
-                        
-                        // 主观因素
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("主观因素")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(themeManager.colors.text)
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(suggestion.subjectiveReasons, id: \.self) { reason in
-                                    HStack(alignment: .top, spacing: 10) {
-                                        Image(systemName: "circle.fill")
-                                            .font(.system(size: 6))
-                                            .foregroundColor(themeManager.colors.secondaryText)
-                                            .padding(.top, 6)
-                                        
-                                        Text(reason)
-                                            .font(.system(size: 16))
-                                            .foregroundColor(themeManager.colors.text)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                            }
-                            .padding(.leading, 4)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(themeManager.colors.secondaryBackground)
-                        )
-                        
-                        // 建议
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("改进建议")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(themeManager.colors.text)
-                            
-                            VStack(alignment: .leading, spacing: 12) {
-                                ForEach(suggestion.suggestions, id: \.self) { suggestion in
-                                    HStack(alignment: .top, spacing: 10) {
-                                        Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.red) // 红色放大镜
-                                        
-                                        Text(suggestion)
-                                            .font(.system(size: 16))
-                                            .foregroundColor(themeManager.colors.text)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                            }
-                            .padding(.leading, 4)
-                        }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(themeManager.colors.secondaryBackground)
-                        )
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 30)
-                }
-            }
-            .navigationBarTitle("\(taskType)类活动分析", displayMode: .inline)
-            .navigationBarItems(trailing: Button("关闭") {
-                isPresented = false
-            })
-        }
-    }
-}
-
-// MARK: - Summary Structures
-// Using TimeAnalysisSummary for both weekly and monthly summaries
-
-// 修改为使用TimeAnalysisSummary
-extension TimeWhereView {
-    // 定义为方法而非属性，避免重复声明
-    func getSampleWeeklySummary() -> TimeAnalysisSummary {
-        var summary = TimeAnalysisSummary()
+    // 添加数据刷新检查方法
+    private func checkAndRefreshData() {
+        let now = Date()
+        let calendar = Calendar.current
         
-        // 基本统计数据
-        summary.totalTime = 1950 // 32.5小时 = 1950分钟
-        summary.taskCount = 47   // 5种类型的任务总数
-        summary.avgDuration = 41 // 平均每次约41分钟
-        
-        // 时间过多/过少分析
-        summary.overAllocatedTypes = [
-            ("工作", 720),   // 12小时
-            ("睡觉", 480),  // 8小时
-            ("运动", 360),  // 6小时
-            ("阅读", 240),  // 4小时
-            ("思考", 180),  // 3小时
-            ("生活", 120),  // 2小时
-            ("会议", 90),   // 1.5小时
-            ("摸鱼", 60)    // 1小时
-        ]
-        
-        summary.underAllocatedTypes = [
-            ("工作", 120),  // 2小时
-            ("睡觉", 180),  // 3小时
-            ("运动", 240),  // 4小时
-            ("阅读", 300),  // 5小时
-            ("思考", 360),  // 6小时
-            ("生活", 420),  // 7小时
-            ("会议", 480),  // 8小时
-            ("摸鱼", 540)   // 9小时
-        ]
-        
-        summary.frequentlyAdjustedTypes = [
-            ("工作", 15, 30.0),
-            ("学习", 10, 20.0),
-            ("阅读", 5, 10.0)
-        ]
-        
-        summary.frequentlyTerminatedTypes = [
-            ("工作", 8, 16.0),
-            ("学习", 5, 10.0),
-            ("娱乐", 12, 24.0)
-        ]
-        
-        summary.mostProductiveTimeOfDay = "上午9点-11点"
-        summary.leastProductiveTimeOfDay = "下午3点-4点"
-        
-        summary.bestCombinations = [
-            ("运动", "工作", "运动后工作效率提升20%"),
-            ("阅读", "思考", "阅读后思考质量提升15%"),
-            ("工作", "休息", "短暂休息后工作专注度提升18%")
-        ]
-        
-        summary.mostConsistentType = "工作"
-        summary.leastConsistentType = "娱乐"
-        
-        summary.trendingUpTypes = [
-            ("工作", 15.0),
-            ("阅读", 10.0)
-        ]
-        
-        summary.trendingDownTypes = [
-            ("娱乐", 8.0),
-            ("摸鱼", 12.0)
-        ]
-        
-        return summary
-    }
-    
-    func getSampleMonthlySummary() -> TimeAnalysisSummary {
-        var summary = TimeAnalysisSummary()
-        
-        // 基本统计数据
-        summary.totalTime = 8800  // 146.7小时 = 8800分钟
-        summary.taskCount = 194   // 月度任务总量
-        summary.avgDuration = 45  // 平均每次约45分钟
-        
-        // 时间过多/过少分析，月度数据量更大
-        summary.overAllocatedTypes = [
-            ("工作", 3200),  // 53.3小时
-            ("睡觉", 2000),  // 33.3小时
-            ("运动", 1500),  // 25小时
-            ("阅读", 1200),  // 20小时
-            ("思考", 900)    // 15小时
-        ]
-        
-        summary.underAllocatedTypes = [
-            ("生活", 600),   // 10小时
-            ("会议", 450),   // 7.5小时
-            ("摸鱼", 300)    // 5小时
-        ]
-        
-        // 频繁调整类型
-        summary.frequentlyAdjustedTypes = [
-            ("工作", 30, 25.0),
-            ("会议", 15, 30.0),
-            ("思考", 10, 15.0)
-        ]
-        
-        // 频繁终止类型
-        summary.frequentlyTerminatedTypes = [
-            ("工作", 20, 20.0),
-            ("学习", 12, 25.0),
-            ("思考", 8, 15.0)
-        ]
-        
-        summary.mostProductiveTimeOfDay = "上午10点-12点"
-        summary.leastProductiveTimeOfDay = "下午2点-4点"
-        
-        // 月度更注重长期模式
-        summary.bestCombinations = [
-            ("运动", "工作", "运动后工作效率提升25%"),
-            ("阅读", "思考", "阅读后思考质量提升20%"),
-            ("休息", "会议", "休息后会议专注度提高15%"),
-            ("冥想", "学习", "冥想后学习吸收率提高18%")
-        ]
-        
-        summary.mostConsistentType = "工作"
-        summary.leastConsistentType = "思考"
-        
-        // 月度趋势分析
-        summary.trendingUpTypes = [
-            ("工作", 15.0),
-            ("学习", 10.0),
-            ("阅读", 8.0)
-        ]
-        
-        summary.trendingDownTypes = [
-            ("休闲", 12.0),
-            ("娱乐", 8.0),
-            ("社交", 5.0)
-        ]
-        
-        return summary
-    }
-}
-
-// MARK: - Weekly Summary View
-struct WeeklySummaryView: View {
-    @EnvironmentObject var themeManager: ThemeManager
-    var summary: TimeAnalysisSummary
-    
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // 标题
-                Text("本周时间总结")
-                    .font(.system(size: 24, weight: .bold))
-                    .padding(.top)
-                
-                // 总体时间概览
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("总体概览")
-                        .font(.headline)
-                        .foregroundColor(themeManager.colors.text)
-                    
-                    HStack(spacing: 12) {
-                        statBox(title: "专注总时长", value: "\(String(format: "%.1f", Double(summary.totalTime) / 60.0))小时")
-                        statBox(title: "平均每次", value: "\(summary.avgDuration)分钟")
-                    }
-                    
-                    // 使用任务类型统计
-                    let taskTypeStats = getTaskTypesStatsForSummary()
-                    taskCountsView(taskCounts: taskTypeStats)
-                }
-                
-                // 时间分配问题
-                timeAllocationIssuesSection
-                
-                // 最佳组合分析
-                if !summary.bestCombinations.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("任务组合分析")
-                            .font(.headline)
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        VStack(spacing: 12) {
-                            ForEach(summary.bestCombinations, id: \.first) { combo in
-                                patternRow(pattern: "\(combo.first) + \(combo.second)", description: combo.synergy)
-                            }
-                        }
-                    }
-                }
-                
-                // 生产力时段分析
-                if !summary.mostProductiveTimeOfDay.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("生产力时段分析")
-                            .font(.headline)
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        HStack(spacing: 12) {
-                            productivityTimeBox(title: "高效时段", time: summary.mostProductiveTimeOfDay, isPositive: true)
-                            productivityTimeBox(title: "低效时段", time: summary.leastProductiveTimeOfDay, isPositive: false)
-                        }
-                    }
-                }
-                
-                // 建议
-                suggestionSection
-
-                // 添加周对比分析部分
-                weeklyComparisonSection
-            }
-            .padding()
-            .frame(maxWidth: .infinity)
-        }
-        .background(themeManager.colors.background)
-    }
-    
-    // 获取任务类型统计，用于显示
-    private func getTaskTypesStatsForSummary() -> [String: Int] {
-        var result: [String: Int] = [:]
-        
-        // 从overAllocatedTypes和underAllocatedTypes中提取任务类型数量
-        for item in summary.overAllocatedTypes {
-            result[item.type] = item.minutes / 30  // 假设平均每个任务30分钟
-        }
-        
-        for item in summary.underAllocatedTypes {
-            if result[item.type] == nil {
-                result[item.type] = item.minutes / 30
-            }
-        }
-        
-        return result
-    }
-    
-    private var timeAllocationIssuesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("时间分配问题")
-                .font(.headline)
-                .foregroundColor(themeManager.colors.text)
-            
-            if !summary.overAllocatedTypes.isEmpty {
-                Text("过度分配")
-                    .font(.subheadline)
-                    .foregroundColor(themeManager.colors.text.opacity(0.8))
-                
-                VStack(spacing: 8) {
-                    ForEach(summary.overAllocatedTypes, id: \.type) { item in
-                        issueBox(type: item.type, message: "占用过多:\(item.minutes)分钟", isOverAllocation: true)
-                    }
-                }
-            }
-            
-            if !summary.underAllocatedTypes.isEmpty {
-                Text("分配不足")
-                    .font(.subheadline)
-                    .foregroundColor(themeManager.colors.text.opacity(0.8))
-                    .padding(.top, 8)
-                
-                VStack(spacing: 8) {
-                    ForEach(summary.underAllocatedTypes, id: \.type) { item in
-                        issueBox(type: item.type, message: "仅用时:\(item.minutes)分钟", isOverAllocation: false)
-                    }
-                }
-            }
-        }
-    }
-    
-    private var suggestionSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("改进建议")
-                .font(.headline)
-                .foregroundColor(themeManager.colors.text)
-            
-            // 生成一些建议
-            let suggestions = generateSuggestions()
-            
-            VStack(spacing: 12) {
-                ForEach(suggestions, id: \.self) { suggestion in
-                    actionSuggestion(suggestion: suggestion)
-                }
-            }
-        }
-    }
-    
-    // 根据summary数据生成建议
-    private func generateSuggestions() -> [String] {
-        var suggestions: [String] = []
-        
-        // 从超时分配中生成建议
-        if !summary.overAllocatedTypes.isEmpty {
-            let type = summary.overAllocatedTypes[0].type
-            suggestions.append("考虑减少「\(type)」时间，适当分配给其他任务类型")
-        }
-        
-        // 从不足分配中生成建议
-        if !summary.underAllocatedTypes.isEmpty {
-            let type = summary.underAllocatedTypes[0].type
-            suggestions.append("建议增加「\(type)」时间，提升整体平衡性")
-        }
-        
-        // 从频繁调整中生成建议
-        if !summary.frequentlyAdjustedTypes.isEmpty {
-            let item = summary.frequentlyAdjustedTypes[0]
-            suggestions.append("「\(item.type)」任务频繁调整时间(占比\(Int(item.adjustmentPercentage))%)，建议提高时间预估准确性")
-        }
-        
-        // 从频繁终止中生成建议
-        if !summary.frequentlyTerminatedTypes.isEmpty {
-            let item = summary.frequentlyTerminatedTypes[0]
-            suggestions.append("「\(item.type)」任务频繁终止(占比\(Int(item.terminationPercentage))%)，建议检视任务设置的合理性")
-        }
-        
-        // 如果建议太少，添加一些通用建议
-        if suggestions.count < 2 {
-            suggestions.append("尝试在高效时段(\(summary.mostProductiveTimeOfDay))安排重要任务")
-            suggestions.append("为每天安排至少30分钟的专注思考时间")
-        }
-        
-        return suggestions
-    }
-    
-    private func productivityTimeBox(title: String, time: String, isPositive: Bool) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            Text(title)
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.text.opacity(0.7))
-            
-            Text(time)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(isPositive ? .green : .orange)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(12)
-    }
-    
-    private func statBox(title: String, value: String) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            Text(title)
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.text.opacity(0.7))
-            
-            Text(value)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(themeManager.colors.text)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(12)
-    }
-    
-    private func taskCountsView(taskCounts: [String: Int]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("任务类型统计")
-                .font(.subheadline)
-                .foregroundColor(themeManager.colors.text.opacity(0.8))
-            
-            VStack(spacing: 8) {
-                ForEach(taskCounts.sorted(by: { item1, item2 in item1.value > item2.value }), id: \.key) { type, count in
-                    HStack {
-                        Text(type)
-                            .font(.system(size: 14))
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        Spacer()
-                        
-                        Text("\(count)次")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(themeManager.colors.text)
-                    }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 12)
-                    .background(themeManager.colors.secondaryBackground.opacity(0.5))
-                    .cornerRadius(8)
-                }
-            }
-        }
-    }
-    
-    private func issueBox(type: String, message: String, isOverAllocation: Bool) -> some View {
-        HStack {
-            Image(systemName: isOverAllocation ? "exclamationmark.triangle" : "arrow.down.circle")
-                .foregroundColor(isOverAllocation ? .orange : .blue)
-            
-            Text(type)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(themeManager.colors.text)
-            
-            Spacer()
-            
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundColor(isOverAllocation ? .orange : .blue)
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(
-            (isOverAllocation ? Color.orange : Color.blue)
-                .opacity(0.1)
-        )
-        .cornerRadius(8)
-    }
-    
-    private func patternRow(pattern: String, description: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(pattern)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(themeManager.colors.text)
-            
-            Text(description)
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.text.opacity(0.7))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(10)
-    }
-    
-    private func actionSuggestion(suggestion: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.red) // 红色放大镜
-                .font(.system(size: 16))
-            
-            Text(suggestion)
-                .font(.system(size: 15))
-                .foregroundColor(themeManager.colors.text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(10)
-    }
-
-    // 添加周对比分析部分
-    private var weeklyComparisonSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("与上周对比")
-                .font(.headline)
-                .foregroundColor(themeManager.colors.text)
-            
-            // 趋势分析 - 显示上周数据对比
-            if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
-                VStack(spacing: 12) {
-                    if !summary.trendingUpTypes.isEmpty {
-                        trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
-                    }
-                    
-                    if !summary.trendingDownTypes.isEmpty {
-                        trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
-                    }
-                }
-            }
-            
-            // 添加额外建议
-            if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
-                HStack {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .foregroundColor(themeManager.colors.secondary)
-                        .font(.system(size: 14))
-                    
-                    Text("对比上周：")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(themeManager.colors.text)
-                    
-                    Text(getWeeklyComparisonSummary())
-                        .font(.system(size: 14))
-                        .foregroundColor(themeManager.colors.secondaryText)
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    // 生成周对比总结文本
-    private func getWeeklyComparisonSummary() -> String {
-        // 不再创建新的TimeWhereView实例，避免环境对象问题
-        do {
-            // 使用当前视图对象已有的数据计算比较结果
-            let weeklyTasks = summary.trendingUpTypes.isEmpty && summary.trendingDownTypes.isEmpty
-            
-            if weeklyTasks {
-                return "暂无足够上周数据进行全面对比分析"
-            }
-            
-            // 如果有上升趋势的类型，显示相关建议
-            if !summary.trendingUpTypes.isEmpty {
-                let topType = summary.trendingUpTypes[0]
-                return "本周\(topType.type)时间增加了\(String(format: "%.1f", abs(topType.increasePercentage)))%，请关注时间分配平衡"
-            }
-            
-            // 如果有下降趋势的类型，显示相关建议
-            if !summary.trendingDownTypes.isEmpty {
-                let topType = summary.trendingDownTypes[0]
-                return "本周\(topType.type)时间减少了\(String(format: "%.1f", abs(topType.decreasePercentage)))%，注意保持活动多样性"
-            }
-            
-            return "本周时间分配相对稳定，整体波动较小"
-        } catch {
-            return "数据分析出现问题，请稍后再试"
-        }
-    }
-    
-    // 趋势盒子视图
-    private func trendBox(title: String, trends: [(type: String, increasePercentage: Double)], isPositive: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(isPositive ? Color.green : Color.orange)
-            
-            VStack(spacing: 8) {
-                ForEach(trends.prefix(2), id: \.type) { trend in
-                    HStack {
-                        Text(trend.type)
-                            .font(.system(size: 14))
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Text("\(String(format: "%.1f", abs(trend.increasePercentage)))%")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(isPositive ? Color.green : Color.orange)
-                        
-                        Image(systemName: isPositive ? "arrow.up" : "arrow.down")
-                            .font(.system(size: 12))
-                            .foregroundColor(isPositive ? Color.green : Color.orange)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
-    }
-    
-    // 适配器方法，将trendingDownTypes转换为与trendingUpTypes相同的格式
-    private func adaptTrendingDownTypes(_ trends: [(type: String, decreasePercentage: Double)]) -> [(type: String, increasePercentage: Double)] {
-        return trends.map { trend in (type: trend.type, increasePercentage: trend.decreasePercentage) }
-    }
-}
-
-// MARK: - Monthly Summary View
-struct MonthlySummaryView: View {
-    @EnvironmentObject var themeManager: ThemeManager
-    var summary: TimeAnalysisSummary
-    
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // 标题
-                Text("本月时间总结")
-                    .font(.system(size: 24, weight: .bold))
-                    .padding(.top)
-                
-                // 总体时间概览
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("总体概览")
-                        .font(.headline)
-                        .foregroundColor(themeManager.colors.text)
-                    
-                    HStack(spacing: 12) {
-                        statBox(title: "专注总时长", value: "\(String(format: "%.1f", Double(summary.totalTime) / 60.0))小时")
-                        statBox(title: "平均每次", value: "\(summary.avgDuration)分钟")
-                    }
-                    
-                    // 使用任务类型统计
-                    let taskTypeStats = getTaskTypesStatsForSummary()
-                    taskCountsView(taskCounts: taskTypeStats)
-                }
-                
-                // 时间分配问题
-                timeAllocationIssuesSection
-                
-                // 趋势分析 - 仅月度分析显示
-                if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("月度趋势分析")
-                            .font(.headline)
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        HStack(spacing: 12) {
-                            trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
-                            trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
-                        }
-                    }
-                }
-                
-                // 行为模式分析 - 使用最佳组合替代
-                if !summary.bestCombinations.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("月度任务组合分析")
-                            .font(.headline)
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        VStack(spacing: 12) {
-                            ForEach(summary.bestCombinations, id: \.first) { combo in
-                                patternRow(pattern: "\(combo.first) + \(combo.second)", description: combo.synergy)
-                            }
-                        }
-                    }
-                }
-                
-                // 一致性分析
-                if !summary.mostConsistentType.isEmpty || !summary.leastConsistentType.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("任务一致性分析")
-                            .font(.headline)
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        HStack(spacing: 12) {
-                            consistencyBox(title: "最稳定任务", type: summary.mostConsistentType, isPositive: true)
-                            consistencyBox(title: "最不稳定任务", type: summary.leastConsistentType, isPositive: false)
-                        }
-                    }
-                }
-                
-                // 建议
-                suggestionSection
-
-                // 添加月对比分析部分
-                monthlyComparisonSection
-            }
-            .padding()
-            .frame(maxWidth: .infinity)
-        }
-        .background(themeManager.colors.background)
-    }
-    
-    // 获取任务类型统计，用于显示
-    private func getTaskTypesStatsForSummary() -> [String: Int] {
-        var result: [String: Int] = [:]
-        
-        // 从overAllocatedTypes和underAllocatedTypes中提取任务类型数量
-        for item in summary.overAllocatedTypes {
-            result[item.type] = item.minutes / 30  // 假设平均每个任务30分钟
-        }
-        
-        for item in summary.underAllocatedTypes {
-            if result[item.type] == nil {
-                result[item.type] = item.minutes / 30
-            }
-        }
-        
-        return result
-    }
-    
-    private var timeAllocationIssuesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("月度时间分配问题")
-                .font(.headline)
-                .foregroundColor(themeManager.colors.text)
-            
-            if !summary.overAllocatedTypes.isEmpty {
-                Text("过度分配")
-                    .font(.subheadline)
-                    .foregroundColor(themeManager.colors.text.opacity(0.8))
-                
-                VStack(spacing: 8) {
-                    ForEach(summary.overAllocatedTypes, id: \.type) { item in
-                        issueBox(type: item.type, message: "占用过多:\(item.minutes)分钟", isOverAllocation: true)
-                    }
-                }
-            }
-            
-            if !summary.underAllocatedTypes.isEmpty {
-                Text("分配不足")
-                    .font(.subheadline)
-                    .foregroundColor(themeManager.colors.text.opacity(0.8))
-                    .padding(.top, 8)
-                
-                VStack(spacing: 8) {
-                    ForEach(summary.underAllocatedTypes, id: \.type) { item in
-                        issueBox(type: item.type, message: "仅用时:\(item.minutes)分钟", isOverAllocation: false)
-                    }
-                }
-            }
-        }
-    }
-    
-    private var suggestionSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("月度改进建议")
-                .font(.headline)
-                .foregroundColor(themeManager.colors.text)
-            
-            // 生成一些建议
-            let suggestions = generateSuggestions()
-            
-            VStack(spacing: 12) {
-                ForEach(suggestions, id: \.self) { suggestion in
-                    actionSuggestion(suggestion: suggestion)
-                }
-            }
-        }
-    }
-    
-    // 根据summary数据生成建议
-    private func generateSuggestions() -> [String] {
-        var suggestions: [String] = []
-        
-        // 从超时分配中生成建议
-        if !summary.overAllocatedTypes.isEmpty {
-            let type = summary.overAllocatedTypes[0].type
-            suggestions.append("考虑减少「\(type)」时间，本月该类型任务占比过高")
-        }
-        
-        // 从不足分配中生成建议
-        if !summary.underAllocatedTypes.isEmpty {
-            let type = summary.underAllocatedTypes[0].type
-            suggestions.append("建议增加「\(type)」时间，提升月度时间分配平衡性")
-        }
-        
-        // 从趋势中生成建议
-        if !summary.trendingUpTypes.isEmpty {
-            let item = summary.trendingUpTypes[0]
-            suggestions.append("「\(item.type)」时间呈上升趋势(+\(String(format: "%.1f", item.increasePercentage))%)，关注是否符合预期")
-        }
-        
-        if !summary.trendingDownTypes.isEmpty {
-            let item = summary.trendingDownTypes[0]
-            suggestions.append("「\(item.type)」时间呈下降趋势(\(String(format: "%.1f", item.decreasePercentage))%)，注意是否需要调整")
-        }
-        
-        // 从一致性中生成建议
-        if !summary.leastConsistentType.isEmpty {
-            suggestions.append("「\(summary.leastConsistentType)」任务时间分配不稳定，尝试建立更规律的习惯")
-        }
-        
-        // 如果建议太少，添加一些通用建议
-        if suggestions.count < 2 {
-            suggestions.append("尝试定期回顾月度时间分配，识别并优化低效模式")
-            suggestions.append("为下月制定合理的时间预算，提高时间利用率")
-        }
-        
-        return suggestions
-    }
-    
-    private func trendBox(title: String, trends: [(type: String, increasePercentage: Double)], isPositive: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(isPositive ? Color.green : Color.orange)
-            
-            VStack(spacing: 8) {
-                ForEach(trends.prefix(2), id: \.type) { trend in
-                    HStack {
-                        Text(trend.type)
-                            .font(.system(size: 14))
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Text("\(String(format: "%.1f", abs(trend.increasePercentage)))%")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(isPositive ? Color.green : Color.orange)
-                        
-                        Image(systemName: isPositive ? "arrow.up" : "arrow.down")
-                            .font(.system(size: 12))
-                            .foregroundColor(isPositive ? Color.green : Color.orange)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
-    }
-    
-    private func consistencyBox(title: String, type: String, isPositive: Bool) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            Text(title)
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.text.opacity(0.7))
-            
-            Text(type)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(isPositive ? .green : .orange)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(12)
-    }
-    
-    private func statBox(title: String, value: String) -> some View {
-        VStack(alignment: .center, spacing: 8) {
-            Text(title)
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.text.opacity(0.7))
-            
-            Text(value)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(themeManager.colors.text)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(12)
-    }
-    
-    private func taskCountsView(taskCounts: [String: Int]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("月度任务统计")
-                .font(.subheadline)
-                .foregroundColor(themeManager.colors.text.opacity(0.8))
-            
-            VStack(spacing: 8) {
-                ForEach(taskCounts.sorted(by: { item1, item2 in item1.value > item2.value }), id: \.key) { type, count in
-                    HStack {
-                        Text(type)
-                            .font(.system(size: 14))
-                            .foregroundColor(themeManager.colors.text)
-                        
-                        Spacer()
-                        
-                        Text("\(count)次")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(themeManager.colors.text)
-                    }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 12)
-                    .background(themeManager.colors.secondaryBackground.opacity(0.5))
-                    .cornerRadius(8)
-                }
-            }
-        }
-    }
-    
-    private func issueBox(type: String, message: String, isOverAllocation: Bool) -> some View {
-        HStack {
-            Image(systemName: isOverAllocation ? "exclamationmark.triangle" : "arrow.down.circle")
-                .foregroundColor(isOverAllocation ? .orange : .blue)
-            
-            Text(type)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(themeManager.colors.text)
-            
-            Spacer()
-            
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundColor(isOverAllocation ? .orange : .blue)
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(
-            (isOverAllocation ? Color.orange : Color.blue)
-                .opacity(0.1)
-        )
-        .cornerRadius(8)
-    }
-    
-    private func patternRow(pattern: String, description: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(pattern)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(themeManager.colors.text)
-            
-            Text(description)
-                .font(.system(size: 14))
-                .foregroundColor(themeManager.colors.text.opacity(0.7))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(10)
-    }
-    
-    private func actionSuggestion(suggestion: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.red) // 红色放大镜
-                .font(.system(size: 16))
-            
-            Text(suggestion)
-                .font(.system(size: 15))
-                .foregroundColor(themeManager.colors.text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(themeManager.colors.secondaryBackground)
-        .cornerRadius(10)
-    }
-
-    // 适配器方法，将trendingDownTypes转换为与trendingUpTypes相同的格式
-    private func adaptTrendingDownTypes(_ trends: [(type: String, decreasePercentage: Double)]) -> [(type: String, increasePercentage: Double)] {
-        return trends.map { trend in (type: trend.type, increasePercentage: trend.decreasePercentage) }
-    }
-
-    // 添加月对比分析部分
-    private var monthlyComparisonSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("与上月对比")
-                .font(.headline)
-                .foregroundColor(themeManager.colors.text)
-            
-            // 趋势分析 - 显示上月数据对比
-            if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
-                VStack(spacing: 12) {
-                    if !summary.trendingUpTypes.isEmpty {
-                        trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
-                    }
-                    
-                    if !summary.trendingDownTypes.isEmpty {
-                        trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
-                    }
+        switch selectedRange {
+        case .today:
+            // 检查是否需要每小时刷新今日数据
+            if let lastRefresh = lastDailyRefresh {
+                let hoursSinceLastRefresh = calendar.dateComponents([.hour], from: lastRefresh, to: now).hour ?? 0
+                if hoursSinceLastRefresh >= 1 {
+                    print("刷新【今日】数据 - 已过\(hoursSinceLastRefresh)小时")
+                    loadTasksForCurrentRange()
+                    lastDailyRefresh = now
                 }
             } else {
-                Text("本月暂无足够数据进行趋势对比")
-                    .font(.system(size: 14))
-                    .foregroundColor(themeManager.colors.secondaryText)
-                    .padding(.vertical, 12)
+                // 首次加载
+                print("首次加载【今日】数据")
+                loadTasksForCurrentRange()
+                lastDailyRefresh = now
             }
             
-            // 添加额外建议
-            HStack {
-                Image(systemName: "arrow.up.arrow.down")
-                    .foregroundColor(themeManager.colors.secondary)
-                    .font(.system(size: 14))
-                
-                Text("对比上月：")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(themeManager.colors.text)
-                
-                Text(getMonthlyComparisonSummary())
-                    .font(.system(size: 14))
-                    .foregroundColor(themeManager.colors.secondaryText)
+        case .week:
+            // 检查是否是周六00:00以后需要刷新周数据
+            let weekday = calendar.component(.weekday, from: now)
+            let hour = calendar.component(.hour, from: now)
+            
+            // 检查是否是周六(7)且时间为凌晨
+            if weekday == 7 && hour == 0 {
+                // 检查今天是否已经刷新过
+                if let lastRefresh = lastWeeklyRefresh {
+                    let daysSinceLastRefresh = calendar.dateComponents([.day], from: lastRefresh, to: now).day ?? 0
+                    if daysSinceLastRefresh >= 1 {
+                        print("刷新【本周】数据 - 周六凌晨自动刷新")
+                        loadTasksForCurrentRange()
+                        lastWeeklyRefresh = now
+                    }
+                } else {
+                    print("首次加载【本周】数据")
+                    loadTasksForCurrentRange()
+                    lastWeeklyRefresh = now
+                }
             }
-            .padding(.top, 4)
+            
+        case .month:
+            // 检查是否是每月1号00:00以后需要刷新月数据
+            let day = calendar.component(.day, from: now)
+            let hour = calendar.component(.hour, from: now)
+            
+            // 检查是否是每月1号且时间为凌晨
+            if day == 1 && hour == 0 {
+                // 检查本月是否已经刷新过
+                if let lastRefresh = lastMonthlyRefresh {
+                    let monthsSinceLastRefresh = calendar.dateComponents([.month], from: lastRefresh, to: now).month ?? 0
+                    if monthsSinceLastRefresh >= 1 {
+                        print("刷新【本月】数据 - 每月1号凌晨自动刷新")
+                        loadTasksForCurrentRange()
+                        lastMonthlyRefresh = now
+                    }
+                } else {
+                    print("首次加载【本月】数据")
+                    loadTasksForCurrentRange()
+                    lastMonthlyRefresh = now
+                }
+            }
         }
     }
-
-    // 生成月对比总结文本
-    private func getMonthlyComparisonSummary() -> String {
-        // 不再创建新的TimeWhereView实例，避免环境对象问题
-        do {
-            // 使用当前视图对象已有的数据计算比较结果
-            let monthlyTasks = summary.trendingUpTypes.isEmpty && summary.trendingDownTypes.isEmpty
-            
-            if monthlyTasks {
-                return "暂无足够上月数据进行全面对比分析"
+    
+    // 加载当前选择范围的任务数据
+    private func loadTasksForCurrentRange() {
+        let oldCount = cachedTasksForSelectedRange.count
+        cachedTasksForSelectedRange = tasksForSelectedRange
+        let newCount = cachedTasksForSelectedRange.count
+        print("数据已刷新：\(selectedRange.rawValue) - 任务数量从 \(oldCount) 变为 \(newCount)")
+    }
+    
+    // 顶部标签栏
+    private var topTabs: some View {
+        HStack(spacing: 16) {
+            ForEach(TimeRange.allCases) { range in
+                Button(action: {
+                    selectedRange = range
+                }) {
+                    Text(range.rawValue)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(selectedRange == range ? themeManager.colors.primary : themeManager.colors.secondaryText)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(selectedRange == range ? themeManager.colors.primary.opacity(0.15) : Color.gray.opacity(0.05))
+                                .shadow(color: selectedRange == range ? themeManager.colors.primary.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(selectedRange == range ? themeManager.colors.primary : Color.gray.opacity(0.2), lineWidth: selectedRange == range ? 1.5 : 1)
+                        )
+                }
+                .help(getRefreshTimeTooltip(for: range))
+                .scaleEffect(selectedRange == range ? 1.05 : 1.0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedRange)
             }
-            
-            // 如果有上升趋势的类型，显示相关建议
-            if !summary.trendingUpTypes.isEmpty {
-                let topType = summary.trendingUpTypes[0]
-                return "本月\(topType.type)时间增加了\(String(format: "%.1f", abs(topType.increasePercentage)))%，建议关注长期任务分配平衡"
-            }
-            
-            // 如果有下降趋势的类型，显示相关建议
-            if !summary.trendingDownTypes.isEmpty {
-                let topType = summary.trendingDownTypes[0]
-                return "本月\(topType.type)时间减少了\(String(format: "%.1f", abs(topType.decreasePercentage)))%，考虑是否需要调整月度规划"
-            }
-            
-            return "本月时间分配相对稳定，月度波动在合理范围内"
-        } catch {
-            return "数据分析出现问题，请稍后再试"
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+    }
+    
+    // 为每种范围添加刷新时间提示
+    private func getRefreshTimeTooltip(for range: TimeRange) -> String {
+        switch range {
+        case .today:
+            return "今日数据每小时刷新一次"
+        case .week:
+            return "本周数据在每周六00:00刷新"
+        case .month:
+            return "本月数据在每月1号00:00刷新"
         }
     }
-}
-
-// MARK: - View Extensions
-extension View {
-    func eraseToAnyView() -> AnyView {
-        return AnyView(self)
+    
+    // 生成周摘要
+    private func generateWeeklySummary() -> TimeAnalysisSummary {
+        return currentWeeklySummary
     }
+    
+    // 生成月摘要
+    private func generateMonthlySummary() -> TimeAnalysisSummary {
+        return currentMonthlySummary
+    }
+    
+    
+    // 详细建议视图
+    struct DetailedSuggestionView: View {
+        let taskType: String
+        let suggestion: (title: String, objectiveReasons: [String], subjectiveReasons: [String], suggestions: [String])
+        @Binding var isPresented: Bool
+        @EnvironmentObject var themeManager: ThemeManager
+        
+        var body: some View {
+            NavigationView {
+                ZStack {
+                    themeManager.colors.background.edgesIgnoringSafeArea(.all)
+                    
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            // 标题
+                            Text(suggestion.title)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(themeManager.colors.text)
+                                .padding(.top, 10)
+                            
+                            // 客观因素
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("客观因素")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(themeManager.colors.text)
+                                
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(suggestion.objectiveReasons, id: \.self) { reason in
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Image(systemName: "circle.fill")
+                                                .font(.system(size: 6))
+                                                .foregroundColor(themeManager.colors.secondaryText)
+                                                .padding(.top, 6)
+                                            
+                                            Text(reason)
+                                                .font(.system(size: 16))
+                                                .foregroundColor(themeManager.colors.text)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 4)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(themeManager.colors.secondaryBackground)
+                            )
+                            
+                            // 主观因素
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("主观因素")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(themeManager.colors.text)
+                                
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(suggestion.subjectiveReasons, id: \.self) { reason in
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Image(systemName: "circle.fill")
+                                                .font(.system(size: 6))
+                                                .foregroundColor(themeManager.colors.secondaryText)
+                                                .padding(.top, 6)
+                                            
+                                            Text(reason)
+                                                .font(.system(size: 16))
+                                                .foregroundColor(themeManager.colors.text)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 4)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(themeManager.colors.secondaryBackground)
+                            )
+                            
+                            // 建议
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("改进建议")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(themeManager.colors.text)
+                                
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(suggestion.suggestions, id: \.self) { suggestion in
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Image(systemName: "magnifyingglass")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.red) // 红色放大镜
+                                            
+                                            Text(suggestion)
+                                                .font(.system(size: 16))
+                                                .foregroundColor(themeManager.colors.text)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 4)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(themeManager.colors.secondaryBackground)
+                            )
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 30)
+                    }
+                }
+                .navigationBarTitle("\(taskType)类活动分析", displayMode: .inline)
+                .navigationBarItems(trailing: Button("关闭") {
+                    isPresented = false
+                })
+            }
+        }
+    }
+    
+    // MARK: - Summary Structures
+    // Using TimeAnalysisSummary for both weekly and monthly summaries
+    
+    // 修改为使用TimeAnalysisSummary
+    // COMMENTED OUT: extension TimeWhereView {
+    // 定义为方法而非属性，避免重复声明
+    /*
+     // DISABLED:         private func getTaskTypesStatsForSummary() -> [String: Int] {
+     // DISABLED:             var result: [String: Int] = [:]
+     // DISABLED:
+     // 从overAllocatedTypes和underAllocatedTypes中提取任务类型数量
+     for item in summary.overAllocatedTypes {
+     result[item.type] = item.minutes / 30  // 假设平均每个任务30分钟
+     }
+     
+     for item in summary.underAllocatedTypes {
+     if result[item.type] == nil {
+     result[item.type] = item.minutes / 30
+     }
+     }
+     
+     return result
+     }
+     }
+     
+     // MARK: - Weekly Summary View
+     struct WeeklySummaryView: View {
+     @EnvironmentObject var themeManager: ThemeManager
+     var summary: TimeAnalysisSummary
+     
+     // 获取任务类型统计，用于显示
+     private func getTaskTypesStatsForSummary() -> [String: Int] {
+     var result: [String: Int] = [:]
+     
+     // 从overAllocatedTypes和underAllocatedTypes中提取任务类型数量
+     for item in summary.overAllocatedTypes {
+     result[item.type] = item.minutes / 30  // 假设平均每个任务30分钟
+     }
+     
+     for item in summary.underAllocatedTypes {
+     if result[item.type] == nil {
+     result[item.type] = item.minutes / 30
+     }
+     }
+     
+     return result
+     }
+     
+     private var timeAllocationIssuesSection: some View {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度时间分配问题")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     if !summary.overAllocatedTypes.isEmpty {
+     Text("过度分配")
+     .font(.subheadline)
+     .foregroundColor(themeManager.colors.text.opacity(0.8))
+     
+     VStack(spacing: 8) {
+     ForEach(summary.overAllocatedTypes, id: \.type) { item in
+     issueBox(type: item.type, message: "占用过多:\(item.minutes)分钟", isOverAllocation: true)
+     }
+     }
+     }
+     
+     if !summary.underAllocatedTypes.isEmpty {
+     Text("分配不足")
+     .font(.subheadline)
+     .foregroundColor(themeManager.colors.text.opacity(0.8))
+     .padding(.top, 8)
+     
+     VStack(spacing: 8) {
+     ForEach(summary.underAllocatedTypes, id: \.type) { item in
+     issueBox(type: item.type, message: "仅用时:\(item.minutes)分钟", isOverAllocation: false)
+     }
+     }
+     }
+     }
+     }
+     
+     var body: some View {
+     ScrollView {
+     VStack(alignment: .leading, spacing: 24) {
+     // 标题
+     Text("本周时间总结")
+     .font(.system(size: 24, weight: .bold))
+     .padding(.top)
+     
+     // 总体时间概览
+     VStack(alignment: .leading, spacing: 16) {
+     Text("总体概览")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     statBox(title: "专注总时长", value: "\(String(format: "%.1f", Double(summary.totalTime) / 60.0))小时")
+     statBox(title: "平均每次", value: "\(summary.avgDuration)分钟")
+     }
+     
+     // 使用任务类型统计
+     let taskTypeStats = getTaskTypesStatsForSummary()
+     taskCountsView(taskCounts: taskTypeStats)
+     }
+     
+     // 时间分配问题
+     timeAllocationIssuesSection
+     
+     // 最佳组合分析
+     if !summary.bestCombinations.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("任务组合分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     VStack(spacing: 12) {
+     ForEach(summary.bestCombinations, id: \.first) { combo in
+     patternRow(pattern: "\(combo.first) + \(combo.second)", description: combo.synergy)
+     }
+     }
+     }
+     }
+     }
+     
+     // 生产力时段分析
+     if !summary.mostProductiveTimeOfDay.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("生产力时段分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     productivityTimeBox(title: "高效时段", time: summary.mostProductiveTimeOfDay, isPositive: true)
+     productivityTimeBox(title: "低效时段", time: summary.leastProductiveTimeOfDay, isPositive: false)
+     }
+     }
+     }
+     
+     // 趋势分析 - 仅月度分析显示
+     if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度趋势分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
+     trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
+     }
+     }
+     }
+     
+     // 行为模式分析 - 使用最佳组合替代
+     if !summary.bestCombinations.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度任务组合分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     VStack(spacing: 12) {
+     ForEach(summary.bestCombinations, id: \.first) { combo in
+     patternRow(pattern: "\(combo.first) + \(combo.second)", description: combo.synergy)
+     }
+     }
+     }
+     }
+     
+     // 一致性分析
+     if !summary.mostConsistentType.isEmpty || !summary.leastConsistentType.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("任务一致性分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     consistencyBox(title: "最稳定任务", type: summary.mostConsistentType, isPositive: true)
+     consistencyBox(title: "最不稳定任务", type: summary.leastConsistentType, isPositive: false)
+     }
+     }
+     }
+     
+     // 建议
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度改进建议")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     // 生成一些建议
+     let suggestions = generateSuggestions()
+     
+     VStack(spacing: 12) {
+     ForEach(suggestions, id: \.self) { suggestion in
+     actionSuggestion(suggestion: suggestion)
+     }
+     }
+     }
+     
+     // 添加月对比分析部分
+     monthlyComparisonSection
+     }
+     .padding()
+     .frame(maxWidth: .infinity)
+     }
+     .background(themeManager.colors.background)
+     }
+     
+     // 根据summary数据生成建议
+     private func generateSuggestions() -> [String] {
+     var suggestions: [String] = []
+     
+     // 从超时分配中生成建议
+     if !summary.overAllocatedTypes.isEmpty {
+     let type = summary.overAllocatedTypes[0].type
+     suggestions.append("考虑减少「\(type)」时间，本月该类型任务占比过高")
+     }
+     
+     // 从不足分配中生成建议
+     if !summary.underAllocatedTypes.isEmpty {
+     let type = summary.underAllocatedTypes[0].type
+     suggestions.append("建议增加「\(type)」时间，提升月度时间分配平衡性")
+     }
+     
+     // 从趋势中生成建议
+     if !summary.trendingUpTypes.isEmpty {
+     let item = summary.trendingUpTypes[0]
+     suggestions.append("「\(item.type)」时间呈上升趋势(+\(String(format: "%.1f", item.increasePercentage))%)，关注是否符合预期")
+     }
+     
+     if !summary.trendingDownTypes.isEmpty {
+     let item = summary.trendingDownTypes[0]
+     suggestions.append("「\(item.type)」时间呈下降趋势(\(String(format: "%.1f", item.decreasePercentage))%)，注意是否需要调整")
+     }
+     
+     // 从一致性中生成建议
+     if !summary.leastConsistentType.isEmpty {
+     suggestions.append("「\(summary.leastConsistentType)」任务时间分配不稳定，尝试建立更规律的习惯")
+     }
+     
+     // 如果建议太少，添加一些通用建议
+     if suggestions.count < 2 {
+     suggestions.append("尝试定期回顾月度时间分配，识别并优化低效模式")
+     suggestions.append("为下月制定合理的时间预算，提高时间利用率")
+     }
+     
+     return suggestions
+     }
+     
+     private func trendBox(title: String, trends: [(type: String, increasePercentage: Double)], isPositive: Bool) -> some View {
+     VStack(alignment: .leading, spacing: 10) {
+     Text(title)
+     .font(.system(size: 16, weight: .medium))
+     .foregroundColor(isPositive ? Color.green : Color.orange)
+     
+     VStack(spacing: 8) {
+     ForEach(trends.prefix(2), id: \.type) { trend in
+     HStack {
+     Text(trend.type)
+     .font(.system(size: 14))
+     .foregroundColor(.primary)
+     
+     Spacer()
+     
+     Text("\(String(format: "%.1f", abs(trend.increasePercentage)))%")
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(isPositive ? Color.green : Color.orange)
+     
+     Image(systemName: isPositive ? "arrow.up" : "arrow.down")
+     .font(.system(size: 12))
+     .foregroundColor(isPositive ? Color.green : Color.orange)
+     }
+     }
+     }
+     }
+     .padding()
+     .background(Color(.secondarySystemBackground))
+     .cornerRadius(10)
+     }
+     
+     private func consistencyBox(title: String, type: String, isPositive: Bool) -> some View {
+     VStack(alignment: .center, spacing: 8) {
+     Text(title)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     
+     Text(type)
+     .font(.system(size: 16, weight: .semibold))
+     .foregroundColor(isPositive ? .green : .orange)
+     }
+     .frame(maxWidth: .infinity)
+     .padding(.vertical, 16)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(12)
+     }
+     
+     private func statBox(title: String, value: String) -> some View {
+     VStack(alignment: .center, spacing: 8) {
+     Text(title)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     
+     Text(value)
+     .font(.system(size: 20, weight: .bold))
+     .foregroundColor(themeManager.colors.text)
+     }
+     .frame(maxWidth: .infinity)
+     .padding(.vertical, 16)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(12)
+     }
+     
+     private func taskCountsView(taskCounts: [String: Int]) -> some View {
+     VStack(alignment: .leading, spacing: 12) {
+     Text("月度任务统计")
+     .font(.subheadline)
+     .foregroundColor(themeManager.colors.text.opacity(0.8))
+     
+     VStack(spacing: 8) {
+     ForEach(taskCounts.sorted(by: { item1, item2 in item1.value > item2.value }), id: \.key) { type, count in
+     HStack {
+     Text(type)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text)
+     
+     Spacer()
+     
+     Text("\(count)次")
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     }
+     .padding(.vertical, 6)
+     .padding(.horizontal, 12)
+     .background(themeManager.colors.secondaryBackground.opacity(0.5))
+     .cornerRadius(8)
+     }
+     }
+     }
+     }
+     
+     private func issueBox(type: String, message: String, isOverAllocation: Bool) -> some View {
+     HStack {
+     Image(systemName: isOverAllocation ? "exclamationmark.triangle" : "arrow.down.circle")
+     .foregroundColor(isOverAllocation ? .orange : .blue)
+     
+     Text(type)
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     
+     Spacer()
+     
+     Text(message)
+     .font(.system(size: 14))
+     .foregroundColor(isOverAllocation ? .orange : .blue)
+     }
+     .padding(.vertical, 10)
+     .padding(.horizontal, 12)
+     .background(
+     (isOverAllocation ? Color.orange : Color.blue)
+     .opacity(0.1)
+     )
+     .cornerRadius(8)
+     }
+     
+     private func patternRow(pattern: String, description: String) -> some View {
+     VStack(alignment: .leading, spacing: 6) {
+     Text(pattern)
+     .font(.system(size: 16, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     
+     Text(description)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     .fixedSize(horizontal: false, vertical: true)
+     }
+     .padding()
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(10)
+     }
+     
+     private func productivityTimeBox(title: String, time: String, isPositive: Bool) -> some View {
+     VStack(alignment: .center, spacing: 8) {
+     Text(title)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     
+     Text(time)
+     .font(.system(size: 16, weight: .semibold))
+     .foregroundColor(isPositive ? .green : .orange)
+     }
+     .frame(maxWidth: .infinity)
+     .padding(.vertical, 16)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(12)
+     }
+     
+     private func actionSuggestion(suggestion: String) -> some View {
+     HStack(alignment: .top, spacing: 12) {
+     Image(systemName: "magnifyingglass")
+     .foregroundColor(.red) // 红色放大镜
+     .font(.system(size: 16))
+     
+     Text(suggestion)
+     .font(.system(size: 15))
+     .foregroundColor(themeManager.colors.text)
+     .fixedSize(horizontal: false, vertical: true)
+     }
+     .padding()
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(10)
+     }
+     
+     // 适配器方法，将trendingDownTypes转换为与trendingUpTypes相同的格式
+     private func adaptTrendingDownTypes(_ trends: [(type: String, decreasePercentage: Double)]) -> [(type: String, increasePercentage: Double)] {
+     return trends.map { trend in (type: trend.type, increasePercentage: trend.decreasePercentage) }
+     }
+     
+     // 添加月对比分析部分
+     private var monthlyComparisonSection: some View {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("与上月对比")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     // 趋势分析 - 显示上月数据对比
+     if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
+     VStack(spacing: 12) {
+     if !summary.trendingUpTypes.isEmpty {
+     trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
+     }
+     
+     if !summary.trendingDownTypes.isEmpty {
+     trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
+     }
+     }
+     } else {
+     Text("本月暂无足够数据进行趋势对比")
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.secondaryText)
+     .padding(.vertical, 12)
+     }
+     
+     // 添加额外建议
+     HStack {
+     Image(systemName: "arrow.up.arrow.down")
+     .foregroundColor(themeManager.colors.secondary)
+     .font(.system(size: 14))
+     
+     Text("对比上月：")
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     
+     Text(getMonthlyComparisonSummary())
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.secondaryText)
+     }
+     .padding(.top, 4)
+     }
+     }
+     
+     // 生成月对比总结文本
+     private func getMonthlyComparisonSummary() -> String {
+     // 不再创建新的TimeWhereView实例，避免环境对象问题
+     do {
+     // 使用当前视图对象已有的数据计算比较结果
+     let monthlyTasks = summary.trendingUpTypes.isEmpty && summary.trendingDownTypes.isEmpty
+     
+     if monthlyTasks {
+     return "暂无足够上月数据进行全面对比分析"
+     }
+     
+     // 如果有上升趋势的类型，显示相关建议
+     if !summary.trendingUpTypes.isEmpty {
+     let topType = summary.trendingUpTypes[0]
+     return "本月\(topType.type)时间增加了\(String(format: "%.1f", abs(topType.increasePercentage)))%，建议关注长期任务分配平衡"
+     }
+     
+     // 如果有下降趋势的类型，显示相关建议
+     if !summary.trendingDownTypes.isEmpty {
+     let topType = summary.trendingDownTypes[0]
+     return "本月\(topType.type)时间减少了\(String(format: "%.1f", abs(topType.decreasePercentage)))%，考虑是否需要调整月度规划"
+     }
+     
+     return "本月时间分配相对稳定，月度波动在合理范围内"
+     } catch {
+     return "数据分析出现问题，请稍后再试"
+     }
+     }
+     }
+     
+     // MARK: - Monthly Summary View
+     struct MonthlySummaryView: View {
+     @EnvironmentObject var themeManager: ThemeManager
+     var summary: TimeAnalysisSummary
+     
+     var body: some View {
+     ScrollView {
+     VStack(alignment: .leading, spacing: 24) {
+     // 标题
+     Text("本月时间总结")
+     .font(.system(size: 24, weight: .bold))
+     .padding(.top)
+     
+     // 总体时间概览
+     VStack(alignment: .leading, spacing: 16) {
+     Text("总体概览")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     statBox(title: "专注总时长", value: "\(String(format: "%.1f", Double(summary.totalTime) / 60.0))小时")
+     statBox(title: "平均每次", value: "\(summary.avgDuration)分钟")
+     }
+     
+     // 使用任务类型统计
+     let taskTypeStats = getTaskTypesStatsForSummary()
+     taskCountsView(taskCounts: taskTypeStats)
+     }
+     
+     // 时间分配问题
+     timeAllocationIssuesSection
+     
+     // 趋势分析 - 仅月度分析显示
+     if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度趋势分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
+     trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
+     }
+     }
+     }
+     
+     // 行为模式分析 - 使用最佳组合替代
+     if !summary.bestCombinations.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度任务组合分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     VStack(spacing: 12) {
+     ForEach(summary.bestCombinations, id: \.first) { combo in
+     patternRow(pattern: "\(combo.first) + \(combo.second)", description: combo.synergy)
+     }
+     }
+     }
+     }
+     
+     // 一致性分析
+     if !summary.mostConsistentType.isEmpty || !summary.leastConsistentType.isEmpty {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("任务一致性分析")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     HStack(spacing: 12) {
+     consistencyBox(title: "最稳定任务", type: summary.mostConsistentType, isPositive: true)
+     consistencyBox(title: "最不稳定任务", type: summary.leastConsistentType, isPositive: false)
+     }
+     }
+     }
+     
+     // 建议
+     suggestionSection
+     
+     // 添加月对比分析部分
+     monthlyComparisonSection
+     }
+     .padding()
+     .frame(maxWidth: .infinity)
+     }
+     .background(themeManager.colors.background)
+     }
+     
+     // 获取任务类型统计，用于显示
+     private func getTaskTypesStatsForSummary() -> [String: Int] {
+     var result: [String: Int] = [:]
+     
+     // 从overAllocatedTypes和underAllocatedTypes中提取任务类型数量
+     for item in summary.overAllocatedTypes {
+     result[item.type] = item.minutes / 30  // 假设平均每个任务30分钟
+     }
+     
+     for item in summary.underAllocatedTypes {
+     if result[item.type] == nil {
+     result[item.type] = item.minutes / 30
+     }
+     }
+     
+     return result
+     }
+     
+     private var timeAllocationIssuesSection: some View {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度时间分配问题")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     if !summary.overAllocatedTypes.isEmpty {
+     Text("过度分配")
+     .font(.subheadline)
+     .foregroundColor(themeManager.colors.text.opacity(0.8))
+     
+     VStack(spacing: 8) {
+     ForEach(summary.overAllocatedTypes, id: \.type) { item in
+     issueBox(type: item.type, message: "占用过多:\(item.minutes)分钟", isOverAllocation: true)
+     }
+     }
+     }
+     
+     if !summary.underAllocatedTypes.isEmpty {
+     Text("分配不足")
+     .font(.subheadline)
+     .foregroundColor(themeManager.colors.text.opacity(0.8))
+     .padding(.top, 8)
+     
+     VStack(spacing: 8) {
+     ForEach(summary.underAllocatedTypes, id: \.type) { item in
+     issueBox(type: item.type, message: "仅用时:\(item.minutes)分钟", isOverAllocation: false)
+     }
+     }
+     }
+     }
+     }
+     
+     private var suggestionSection: some View {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("月度改进建议")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     // 生成一些建议
+     let suggestions = generateSuggestions()
+     
+     VStack(spacing: 12) {
+     ForEach(suggestions, id: \.self) { suggestion in
+     actionSuggestion(suggestion: suggestion)
+     }
+     }
+     }
+     }
+     
+     // 根据summary数据生成建议
+     private func generateSuggestions() -> [String] {
+     var suggestions: [String] = []
+     
+     // 从超时分配中生成建议
+     if !summary.overAllocatedTypes.isEmpty {
+     let type = summary.overAllocatedTypes[0].type
+     suggestions.append("考虑减少「\(type)」时间，本月该类型任务占比过高")
+     }
+     
+     // 从不足分配中生成建议
+     if !summary.underAllocatedTypes.isEmpty {
+     let type = summary.underAllocatedTypes[0].type
+     suggestions.append("建议增加「\(type)」时间，提升月度时间分配平衡性")
+     }
+     
+     // 从趋势中生成建议
+     if !summary.trendingUpTypes.isEmpty {
+     let item = summary.trendingUpTypes[0]
+     suggestions.append("「\(item.type)」时间呈上升趋势(+\(String(format: "%.1f", item.increasePercentage))%)，关注是否符合预期")
+     }
+     
+     if !summary.trendingDownTypes.isEmpty {
+     let item = summary.trendingDownTypes[0]
+     suggestions.append("「\(item.type)」时间呈下降趋势(\(String(format: "%.1f", item.decreasePercentage))%)，注意是否需要调整")
+     }
+     
+     // 从一致性中生成建议
+     if !summary.leastConsistentType.isEmpty {
+     suggestions.append("「\(summary.leastConsistentType)」任务时间分配不稳定，尝试建立更规律的习惯")
+     }
+     
+     // 如果建议太少，添加一些通用建议
+     if suggestions.count < 2 {
+     suggestions.append("尝试定期回顾月度时间分配，识别并优化低效模式")
+     suggestions.append("为下月制定合理的时间预算，提高时间利用率")
+     }
+     
+     return suggestions
+     }
+     
+     private func trendBox(title: String, trends: [(type: String, increasePercentage: Double)], isPositive: Bool) -> some View {
+     VStack(alignment: .leading, spacing: 10) {
+     Text(title)
+     .font(.system(size: 16, weight: .medium))
+     .foregroundColor(isPositive ? Color.green : Color.orange)
+     
+     VStack(spacing: 8) {
+     ForEach(trends.prefix(2), id: \.type) { trend in
+     HStack {
+     Text(trend.type)
+     .font(.system(size: 14))
+     .foregroundColor(.primary)
+     
+     Spacer()
+     
+     Text("\(String(format: "%.1f", abs(trend.increasePercentage)))%")
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(isPositive ? Color.green : Color.orange)
+     
+     Image(systemName: isPositive ? "arrow.up" : "arrow.down")
+     .font(.system(size: 12))
+     .foregroundColor(isPositive ? Color.green : Color.orange)
+     }
+     }
+     }
+     }
+     .padding()
+     .background(Color(.secondarySystemBackground))
+     .cornerRadius(10)
+     }
+     
+     private func consistencyBox(title: String, type: String, isPositive: Bool) -> some View {
+     VStack(alignment: .center, spacing: 8) {
+     Text(title)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     
+     Text(type)
+     .font(.system(size: 16, weight: .semibold))
+     .foregroundColor(isPositive ? .green : .orange)
+     }
+     .frame(maxWidth: .infinity)
+     .padding(.vertical, 16)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(12)
+     }
+     
+     private func statBox(title: String, value: String) -> some View {
+     VStack(alignment: .center, spacing: 8) {
+     Text(title)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     
+     Text(value)
+     .font(.system(size: 20, weight: .bold))
+     .foregroundColor(themeManager.colors.text)
+     }
+     .frame(maxWidth: .infinity)
+     .padding(.vertical, 16)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(12)
+     }
+     
+     private func taskCountsView(taskCounts: [String: Int]) -> some View {
+     VStack(alignment: .leading, spacing: 12) {
+     Text("月度任务统计")
+     .font(.subheadline)
+     .foregroundColor(themeManager.colors.text.opacity(0.8))
+     
+     VStack(spacing: 8) {
+     ForEach(taskCounts.sorted(by: { item1, item2 in item1.value > item2.value }), id: \.key) { type, count in
+     HStack {
+     Text(type)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text)
+     
+     Spacer()
+     
+     Text("\(count)次")
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     }
+     .padding(.vertical, 6)
+     .padding(.horizontal, 12)
+     .background(themeManager.colors.secondaryBackground.opacity(0.5))
+     .cornerRadius(8)
+     }
+     }
+     }
+     }
+     
+     private func issueBox(type: String, message: String, isOverAllocation: Bool) -> some View {
+     HStack {
+     Image(systemName: isOverAllocation ? "exclamationmark.triangle" : "arrow.down.circle")
+     .foregroundColor(isOverAllocation ? .orange : .blue)
+     
+     Text(type)
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     
+     Spacer()
+     
+     Text(message)
+     .font(.system(size: 14))
+     .foregroundColor(isOverAllocation ? .orange : .blue)
+     }
+     .padding(.vertical, 10)
+     .padding(.horizontal, 12)
+     .background(
+     (isOverAllocation ? Color.orange : Color.blue)
+     .opacity(0.1)
+     )
+     .cornerRadius(8)
+     }
+     
+     private func patternRow(pattern: String, description: String) -> some View {
+     VStack(alignment: .leading, spacing: 6) {
+     Text(pattern)
+     .font(.system(size: 16, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     
+     Text(description)
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.text.opacity(0.7))
+     .fixedSize(horizontal: false, vertical: true)
+     }
+     .padding()
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(10)
+     }
+     
+     private func actionSuggestion(suggestion: String) -> some View {
+     HStack(alignment: .top, spacing: 12) {
+     Image(systemName: "magnifyingglass")
+     .foregroundColor(.red) // 红色放大镜
+     .font(.system(size: 16))
+     
+     Text(suggestion)
+     .font(.system(size: 15))
+     .foregroundColor(themeManager.colors.text)
+     .fixedSize(horizontal: false, vertical: true)
+     }
+     .padding()
+     .frame(maxWidth: .infinity, alignment: .leading)
+     .background(themeManager.colors.secondaryBackground)
+     .cornerRadius(10)
+     }
+     
+     // 适配器方法，将trendingDownTypes转换为与trendingUpTypes相同的格式
+     private func adaptTrendingDownTypes(_ trends: [(type: String, decreasePercentage: Double)]) -> [(type: String, increasePercentage: Double)] {
+     return trends.map { trend in (type: trend.type, increasePercentage: trend.decreasePercentage) }
+     }
+     
+     // 添加月对比分析部分
+     private var monthlyComparisonSection: some View {
+     VStack(alignment: .leading, spacing: 16) {
+     Text("与上月对比")
+     .font(.headline)
+     .foregroundColor(themeManager.colors.text)
+     
+     // 趋势分析 - 显示上月数据对比
+     if !summary.trendingUpTypes.isEmpty || !summary.trendingDownTypes.isEmpty {
+     VStack(spacing: 12) {
+     if !summary.trendingUpTypes.isEmpty {
+     trendBox(title: "上升趋势", trends: summary.trendingUpTypes, isPositive: true)
+     }
+     
+     if !summary.trendingDownTypes.isEmpty {
+     trendBox(title: "下降趋势", trends: adaptTrendingDownTypes(summary.trendingDownTypes), isPositive: false)
+     }
+     }
+     } else {
+     Text("本月暂无足够数据进行趋势对比")
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.secondaryText)
+     .padding(.vertical, 12)
+     }
+     
+     // 添加额外建议
+     HStack {
+     Image(systemName: "arrow.up.arrow.down")
+     .foregroundColor(themeManager.colors.secondary)
+     .font(.system(size: 14))
+     
+     Text("对比上月：")
+     .font(.system(size: 14, weight: .medium))
+     .foregroundColor(themeManager.colors.text)
+     
+     Text(getMonthlyComparisonSummary())
+     .font(.system(size: 14))
+     .foregroundColor(themeManager.colors.secondaryText)
+     }
+     .padding(.top, 4)
+     }
+     }
+     
+     // 生成月对比总结文本
+     private func getMonthlyComparisonSummary() -> String {
+     // 不再创建新的TimeWhereView实例，避免环境对象问题
+     do {
+     // 使用当前视图对象已有的数据计算比较结果
+     let monthlyTasks = summary.trendingUpTypes.isEmpty && summary.trendingDownTypes.isEmpty
+     
+     if monthlyTasks {
+     return "暂无足够上月数据进行全面对比分析"
+     }
+     
+     // 如果有上升趋势的类型，显示相关建议
+     if !summary.trendingUpTypes.isEmpty {
+     let topType = summary.trendingUpTypes[0]
+     return "本月\(topType.type)时间增加了\(String(format: "%.1f", abs(topType.increasePercentage)))%，建议关注长期任务分配平衡"
+     }
+     
+     // 如果有下降趋势的类型，显示相关建议
+     if !summary.trendingDownTypes.isEmpty {
+     let topType = summary.trendingDownTypes[0]
+     return "本月\(topType.type)时间减少了\(String(format: "%.1f", abs(topType.decreasePercentage)))%，考虑是否需要调整月度规划"
+     }
+     
+     return "本月时间分配相对稳定，月度波动在合理范围内"
+     } catch {
+     return "数据分析出现问题，请稍后再试"
+     }
+     }
+     }
+     
+     // MARK: - View Extensions
+     // COMMENTED OUT: extension View {
+     func eraseToAnyView() -> AnyView {
+     return AnyView(self)
+     }
+     
+     
+     
+     
+     
+     extension TimeWhereView {
+     func getSampleWeeklySummary() -> TimeAnalysisSummary {
+     var summary = TimeAnalysisSummary()
+     
+     // 基本统计数据
+     summary.totalTime = 1950 // 32.5小时 = 1950分钟
+     summary.taskCount = 47   // 5种类型的任务总数
+     summary.avgDuration = 41 // 平均每次约41分钟
+     
+     // 时间过多/过少分析
+     summary.overAllocatedTypes = [
+     ("工作", 720),   // 12小时
+     ("睡觉", 480),  // 8小时
+     ("运动", 360),  // 6小时
+     ("阅读", 240),  // 4小时
+     ("思考", 180),  // 3小时
+     ("生活", 120),  // 2小时
+     ("会议", 90),   // 1.5小时
+     ("摸鱼", 60)    // 1小时
+     ]
+     
+     summary.underAllocatedTypes = [
+     ("工作", 120),  // 2小时
+     ("睡觉", 180),  // 3小时
+     ("运动", 240),  // 4小时
+     ("阅读", 300),  // 5小时
+     ("思考", 360),  // 6小时
+     ("生活", 420),  // 7小时
+     ("会议", 480),  // 8小时
+     ("摸鱼", 540)   // 9小时
+     ]
+     
+     summary.frequentlyAdjustedTypes = [
+     ("工作", 15, 30.0),
+     ("学习", 10, 20.0),
+     ("阅读", 5, 10.0)
+     ]
+     
+     summary.frequentlyTerminatedTypes = [
+     ("工作", 8, 16.0),
+     ("学习", 5, 10.0),
+     ("娱乐", 12, 24.0)
+     ]
+     
+     summary.mostProductiveTimeOfDay = "上午9点-11点"
+     summary.leastProductiveTimeOfDay = "下午3点-4点"
+     
+     summary.bestCombinations = [
+     ("运动", "工作", "运动后工作效率提升20%"),
+     ("阅读", "思考", "阅读后思考质量提升15%"),
+     ("工作", "休息", "短暂休息后工作专注度提升18%")
+     ]
+     
+     summary.mostConsistentType = "工作"
+     summary.leastConsistentType = "娱乐"
+     
+     summary.trendingUpTypes = [
+     ("工作", 15.0),
+     ("阅读", 10.0)
+     ]
+     
+     summary.trendingDownTypes = [
+     ("娱乐", 8.0),
+     ("摸鱼", 12.0)
+     ]
+     
+     return summary
+     }
+     
+     func getSampleMonthlySummary() -> TimeAnalysisSummary {
+     var summary = TimeAnalysisSummary()
+     
+     // 基本统计数据
+     summary.totalTime = 8800  // 146.7小时 = 8800分钟
+     summary.taskCount = 194   // 月度任务总量
+     summary.avgDuration = 45  // 平均每次约45分钟
+     
+     // 时间过多/过少分析，月度数据量更大
+     summary.overAllocatedTypes = [
+     ("工作", 3200),  // 53.3小时
+     ("睡觉", 2000),  // 33.3小时
+     ("运动", 1500),  // 25小时
+     ("阅读", 1200),  // 20小时
+     ("思考", 900)    // 15小时
+     ]
+     
+     summary.underAllocatedTypes = [
+     ("生活", 600),   // 10小时
+     ("会议", 450),   // 7.5小时
+     ("摸鱼", 300)    // 5小时
+     ]
+     
+     // 频繁调整类型
+     summary.frequentlyAdjustedTypes = [
+     ("工作", 30, 25.0),
+     ("会议", 15, 30.0),
+     ("思考", 10, 15.0)
+     ]
+     
+     // 频繁终止类型
+     summary.frequentlyTerminatedTypes = [
+     ("工作", 20, 20.0),
+     ("学习", 12, 25.0),
+     ("思考", 8, 15.0)
+     ]
+     
+     summary.mostProductiveTimeOfDay = "上午10点-12点"
+     summary.leastProductiveTimeOfDay = "下午2点-4点"
+     
+     // 月度更注重长期模式
+     summary.bestCombinations = [
+     ("运动", "工作", "运动后工作效率提升25%"),
+     ("阅读", "思考", "阅读后思考质量提升20%"),
+     ("休息", "会议", "休息后会议专注度提高15%"),
+     ("冥想", "学习", "冥想后学习吸收率提高18%")
+     ]
+     
+     summary.mostConsistentType = "工作"
+     summary.leastConsistentType = "思考"
+     
+     // 月度趋势分析
+     summary.trendingUpTypes = [
+     ("工作", 15.0),
+     ("学习", 10.0),
+     ("阅读", 8.0)
+     ]
+     
+     summary.trendingDownTypes = [
+     ("休闲", 12.0),
+     ("娱乐", 8.0),
+     ("社交", 5.0)
+     ]
+     
+     return summary
+     }
+     }
+     
+     extension View {
+     func eraseToAnyView() -> AnyView {
+     return AnyView(self)
+     }
+     }*/
 }

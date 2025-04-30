@@ -13,5 +13,18 @@
     <true/>
     <key>NSSupportsLiveActivitiesFrequentUpdates</key>
     <true/>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>fetch</string>
+        <string>processing</string>
+        <string>remote-notification</string>
+    </array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.timestop.focustimer.backgroundtask</string>
+    </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>TimeStop需要使用麦克风功能来验证您的任务完成情况（唱歌和朗读验证模式）</string>
 </dict>
 </plist> 

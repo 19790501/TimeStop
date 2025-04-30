@@ -31,7 +31,9 @@ struct TabBarView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .offset(y: -3)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(PlainButtonStyle())
             }
         }
         .padding(.horizontal)
@@ -48,6 +50,7 @@ struct TabBarView: View {
                 .frame(maxWidth: .infinity)
             , alignment: .top
         )
+        .zIndex(999)
     }
     
     // 所有标签页

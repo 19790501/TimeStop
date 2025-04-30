@@ -1,4 +1,5 @@
 import SwiftUI
+import AudioToolbox
 
 struct SettingsView: View {
     @EnvironmentObject var viewModel: AppViewModel
@@ -27,6 +28,9 @@ struct SettingsView: View {
                     .foregroundColor(themeManager.colors.text)
                     .padding(.top, 30)
                 
+                // 添加ScrollView以确保内容可滚动
+                ScrollView {
+                    VStack(spacing: 0) {
                 // 用户信息卡片
                 VStack(alignment: .leading, spacing: 8) {
                     if let user = viewModel.currentUser {
@@ -51,7 +55,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
                 .background(themeManager.colors.secondaryBackground)
-                .cornerRadius(16)
+                .cornerRadius(12)
                 .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
                 .padding(.horizontal, 20)
                 .padding(.top, 25)
@@ -123,7 +127,7 @@ struct SettingsView: View {
                     }
                     .padding(20)
                     .background(themeManager.colors.secondaryBackground)
-                    .cornerRadius(16)
+                    .cornerRadius(12)
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
                     
                     // 主题设置卡片
@@ -171,8 +175,11 @@ struct SettingsView: View {
                     }
                     .padding(20)
                     .background(themeManager.colors.secondaryBackground)
-                    .cornerRadius(16)
+                    .cornerRadius(12)
                     .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
+                    
+                    // 添加缓存管理卡片
+                    CacheManagementCard(viewModel: viewModel, themeManager: themeManager)
                     
                     // 退出登录按钮
                     Button(action: {
@@ -188,14 +195,16 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(themeManager.colors.secondaryBackground)
-                        .cornerRadius(16)
+                        .cornerRadius(12)
                         .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 15)
-                
-                Spacer()
+                        // 添加底部间距，确保内容不会被TabBar遮挡
+                        .padding(.bottom, 80)
+                    }
+                }
             }
             .padding(.top, 60)
         }
@@ -300,6 +309,283 @@ struct RingtoneSelectionView: View {
             }
         }
         .preferredColorScheme(.light) // 固定使用浅色模式
+    }
+}
+
+// 添加缓存管理卡片视图
+struct CacheManagementCard: View {
+    @ObservedObject var viewModel: AppViewModel
+    @ObservedObject var themeManager: ThemeManager
+    
+    @State private var isClearing: Bool = false
+    @State private var showingClearConfirmation: Bool = false
+    @State private var showingClearSuccess: Bool = false
+    @State private var clearError: String? = nil
+    @State private var selectedCacheType: AppViewModel.CacheType = .all
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // 标题
+            Text("缓存管理")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(themeManager.colors.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 12)
+            
+            // 缓存大小信息
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("当前缓存大小")
+                        .font(.system(size: 16))
+                        .foregroundColor(themeManager.colors.text)
+                    
+                    Text(String(format: "%.2f MB", viewModel.cacheStatus.totalSizeMB))
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(
+                            viewModel.cacheStatus.totalSizeMB > 50 ? .red :
+                            viewModel.cacheStatus.totalSizeMB > 20 ? .orange : themeManager.colors.primary
+                        )
+                }
+                
+                Spacer()
+                
+                // 上次清理时间
+                if let lastCleanDate = viewModel.cacheStatus.lastCleanDate {
+                    VStack(alignment: .trailing, spacing: 5) {
+                        Text("上次清理")
+                            .font(.system(size: 14))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                        
+                        Text(formatDate(lastCleanDate))
+                            .font(.system(size: 14))
+                            .foregroundColor(themeManager.colors.secondaryText)
+                    }
+                }
+            }
+            .padding(.vertical, 10)
+            
+            // 清理选项
+            VStack(spacing: 10) {
+                // 全部清理按钮
+                Button(action: {
+                    selectedCacheType = .all
+                    showingClearConfirmation = true
+                }) {
+                    HStack {
+                        Image(systemName: "trash")
+                            .font(.system(size: 16))
+                        Text("清理全部缓存")
+                            .font(.system(size: 16))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(themeManager.colors.primary)
+                    .cornerRadius(8)
+                }
+                .disabled(isClearing)
+                
+                // 选择性清理按钮
+                HStack(spacing: 10) {
+                    // 音频缓存按钮
+                    Button(action: {
+                        selectedCacheType = .audio
+                        showingClearConfirmation = true
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 14))
+                            Text("音频")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Color.blue.opacity(0.8))
+                        .cornerRadius(8)
+                    }
+                    .disabled(isClearing)
+                    
+                    // 录音文件按钮
+                    Button(action: {
+                        selectedCacheType = .recordings
+                        showingClearConfirmation = true
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "mic")
+                                .font(.system(size: 14))
+                            Text("录音")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Color.orange)
+                        .cornerRadius(8)
+                    }
+                    .disabled(isClearing)
+                    
+                    // 临时文件按钮
+                    Button(action: {
+                        selectedCacheType = .tempFiles
+                        showingClearConfirmation = true
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "doc")
+                                .font(.system(size: 14))
+                            Text("临时文件")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Color.green)
+                        .cornerRadius(8)
+                    }
+                    .disabled(isClearing)
+                    
+                    // Metal缓存按钮
+                    Button(action: {
+                        selectedCacheType = .metal
+                        showingClearConfirmation = true
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "paintbrush")
+                                .font(.system(size: 14))
+                            Text("渲染缓存")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Color.purple)
+                        .cornerRadius(8)
+                    }
+                    .disabled(isClearing)
+                }
+            }
+            .padding(.vertical, 10)
+            
+            // 刷新缓存大小按钮
+            Button(action: {
+                // 播放按钮音效
+                viewModel.playButtonSound()
+                
+                // 刷新缓存大小信息
+                viewModel.calculateCacheSize { _ in }
+            }) {
+                HStack {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14))
+                    Text("刷新缓存信息")
+                        .font(.system(size: 14))
+                }
+                .foregroundColor(themeManager.colors.text)
+                .padding(.vertical, 8)
+            }
+            .padding(.top, 10)
+            
+            // 清理进度指示器
+            if isClearing {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: themeManager.colors.primary))
+                    
+                    Text("正在清理缓存...")
+                        .font(.system(size: 14))
+                        .foregroundColor(themeManager.colors.secondaryText)
+                }
+                .padding(.top, 10)
+            }
+            
+            // 错误信息
+            if let error = clearError {
+                Text(error)
+                    .font(.system(size: 14))
+                    .foregroundColor(.red)
+                    .padding(.top, 10)
+            }
+        }
+        .padding(20)
+        .background(themeManager.colors.secondaryBackground)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
+        .alert(isPresented: $showingClearConfirmation) {
+            Alert(
+                title: Text("确认清理缓存"),
+                message: Text(getCacheTypeDescription()),
+                primaryButton: .destructive(Text("清理")) {
+                    clearCache()
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
+        }
+        .alert("清理完成", isPresented: $showingClearSuccess) {
+            Button("确定", role: .cancel) { }
+        } message: {
+            Text("缓存已成功清理，总空间节省了 \(String(format: "%.2f", viewModel.cacheStatus.totalSizeMB)) MB。")
+        }
+        .onAppear {
+            // 刷新缓存大小信息
+            viewModel.calculateCacheSize { _ in }
+        }
+    }
+    
+    // 格式化日期
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter.string(from: date)
+    }
+    
+    // 获取缓存类型描述
+    private func getCacheTypeDescription() -> String {
+        switch selectedCacheType {
+        case .all:
+            return "这将清理所有类型的缓存，包括音频、录音、临时文件和渲染缓存。"
+        case .audio:
+            return "这将清理音频相关的缓存文件。"
+        case .recordings:
+            return "这将清理所有录音文件。"
+        case .tempFiles:
+            return "这将清理应用产生的临时文件。"
+        case .metal:
+            return "这将清理Metal渲染缓存，可能解决渲染问题。"
+        }
+    }
+    
+    // 清理缓存
+    private func clearCache() {
+        // 开始清理
+        isClearing = true
+        clearError = nil
+        
+        // 播放按钮音效
+        viewModel.playButtonSound()
+        
+        // 调用ViewModel的清理方法
+        viewModel.clearCache(type: selectedCacheType) { success, error in
+            // 清理完成
+            isClearing = false
+            
+            if success {
+                // 播放成功音效
+                AudioServicesPlaySystemSound(1057)
+                
+                // 显示成功提示
+                showingClearSuccess = true
+            } else {
+                // 设置错误信息
+                if let error = error {
+                    clearError = "清理失败: \(error.localizedDescription)"
+                } else {
+                    clearError = "清理过程中发生未知错误"
+                }
+                
+                // 播放错误音效
+                AudioServicesPlaySystemSound(1073)
+            }
+        }
     }
 }
 

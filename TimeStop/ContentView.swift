@@ -21,12 +21,16 @@ struct ContentView: View {
     @State private var showingAchievementUnlock = false
     @State private var unlockedAchievementType: AchievementType?
     @State private var unlockedAchievementLevel: Int = 0
+    @State private var disableTabSwipe: Bool = false // 添加控制TabView滑动的状态
     
     // 用于控制首次加载
     @State private var isFirstAppear = true
     
     // 保存通知观察者以便适当时移除
     @State private var notificationObservers: [NSObjectProtocol] = []
+    
+    // 添加状态恢复标志
+    @State private var isRestoringState = false
     
     // 常量定义，避免魔法数字
     private enum Constants {
@@ -119,6 +123,9 @@ struct ContentView: View {
             
             // 添加navigationManager.activeScreen的观察者
             setupPublisherSubscriptions()
+            
+            // 检查是否需要恢复状态
+            checkAndRestoreState()
         }
         .onDisappear {
             // 移除所有通知观察者
@@ -142,6 +149,34 @@ struct ContentView: View {
         }
     }
     
+    private func checkAndRestoreState() {
+        guard !isRestoringState else { return }
+        isRestoringState = true
+        
+        // 检查是否有活动任务需要恢复
+        if let taskData = UserDefaults.standard.data(forKey: "activeTask"),
+           let task = try? JSONDecoder().decode(Task.self, from: taskData) {
+            let timeRemaining = UserDefaults.standard.integer(forKey: "timeRemaining")
+            let timerIsRunning = UserDefaults.standard.bool(forKey: "timerIsRunning")
+            let isVerifying = UserDefaults.standard.bool(forKey: "isVerifying")
+            
+            // 恢复任务状态
+            viewModel.activeTask = task
+            viewModel.timeRemaining = timeRemaining
+            viewModel.timerIsRunning = timerIsRunning
+            viewModel.isVerifying = isVerifying
+            
+            // 根据状态导航到相应界面
+            if isVerifying {
+                navigationManager.navigate(to: .verification)
+            } else if timerIsRunning {
+                navigationManager.navigate(to: .focusTimer)
+            }
+        }
+        
+        isRestoringState = false
+    }
+    
     // 设置通知观察者
     private func setupNotificationObservers() {
         // 切换到统计页签的观察者
@@ -152,7 +187,83 @@ struct ContentView: View {
         ) { [self] _ in
             let tab: NavigationManager.TabViewSelection = .timeAnalysis
             withAnimation {
-                selectedTab = tab // 时间去哪了页签
+                selectedTab = tab
+            }
+        }
+        
+        // 处理从通知返回活动任务的观察者
+        let returnToActiveTaskObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ReturnToActiveTask"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // 确保先停止所有音频和震动
+            AudioService.shared.emergencyCleanup()
+            
+            // 确保计时器界面显示
+            if viewModel.activeTask != nil {
+                if viewModel.timeRemaining == 0 || viewModel.isVerifying {
+                    // 如果计时器已经结束或者需要验证，直接跳转到验证界面
+                    viewModel.startVerification()
+                    navigationManager.isShowingVerification = true
+                } else {
+                    // 否则显示计时器界面
+                    navigationManager.isShowingFocusTimer = true
+                }
+            } else {
+                // 没有活动任务，返回主页
+                navigationManager.isShowingFocusTimer = false
+                navigationManager.isShowingVerification = false
+            }
+        }
+        
+        // 任务恢复通知的观察者
+        let taskRestoredObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TaskRestored"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // 应用意外退出后恢复任务状态时，显示倒计时界面
+            // 确保先停止所有音频和震动
+            AudioService.shared.emergencyCleanup()
+            
+            if viewModel.activeTask != nil {
+                navigationManager.isShowingFocusTimer = true
+            }
+        }
+        
+        // 需要验证通知的观察者
+        let verificationNeededObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("VerificationNeeded"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // 应用意外退出后，如果倒计时已结束，显示验证界面
+            // 确保先停止所有音频和震动
+            AudioService.shared.emergencyCleanup()
+            
+            navigationManager.navigateToVerification() // 使用新方法
+        }
+        
+        // 处理完成任务通知的观察者
+        let completeTaskObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CompleteTaskFromNotification"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            if viewModel.activeTask != nil {
+                viewModel.completeTask()
+            }
+        }
+        
+        // 处理取消任务通知的观察者
+        let cancelTaskObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("CancelTaskFromNotification"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            if viewModel.activeTask != nil {
+                viewModel.cancelTask()
             }
         }
         
@@ -180,8 +291,47 @@ struct ContentView: View {
             }
         }
         
-        // 保存观察者引用以便后续移除
-        notificationObservers = [statsTabObserver, welcomeDismissedObserver, userSignOutObserver]
+        // 添加禁用TabView滑动的观察者
+        let disableTabSwipeObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("DisableTabSwipe"),
+            object: nil,
+            queue: .main
+        ) { [self] notification in
+            if let userInfo = notification.userInfo,
+               let isDisabled = userInfo["disabled"] as? Bool {
+                withAnimation {
+                    disableTabSwipe = isDisabled
+                }
+            }
+        }
+        
+        // 准备导航通知的观察者
+        let prepareNavigationObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("PrepareForTaskNavigation"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // 重置导航状态
+            navigationManager.isShowingFocusTimer = false
+            navigationManager.isShowingVerification = false
+            navigationManager.isShowingWelcome = false
+            navigationManager.isShowingCompletion = false
+            navigationManager.isShowingAchievement = false
+        }
+        
+        // 保存所有观察者以便后续移除
+        notificationObservers = [
+            statsTabObserver,
+            returnToActiveTaskObserver,
+            taskRestoredObserver,
+            verificationNeededObserver,
+            completeTaskObserver,
+            cancelTaskObserver,
+            welcomeDismissedObserver,
+            userSignOutObserver,
+            disableTabSwipeObserver,
+            prepareNavigationObserver
+        ]
     }
     
     // 移除所有通知观察者
@@ -209,35 +359,52 @@ struct ContentView: View {
     
     var mainScreens: some View {
         VStack(spacing: 0) {
-            // Main content area
-            TabView(selection: $selectedTab) {
-                // Home/Create task tab
-                CreateTaskView()
-                    .tag(NavigationManager.TabViewSelection.home)
+            // Main content area - 使用ZStack简单包裹内容，保持结构简单
+            ZStack {
+                // 基础TabView
+                TabView(selection: $selectedTab) {
+                    // Home/Create task tab
+                    CreateTaskView()
+                        .environmentObject(navigationManager)
+                        .tag(NavigationManager.TabViewSelection.home)
+                    
+                    // 时间去哪了标签页
+                    TimeWhereView()
+                        .environmentObject(viewModel)
+                        .environmentObject(themeManager)
+                        .environmentObject(userModel)
+                        .tag(NavigationManager.TabViewSelection.timeAnalysis)
+                    
+                    // 成就标签页
+                    AchievementCollectionView(achievementManager: AchievementManager.shared)
+                        .tag(NavigationManager.TabViewSelection.achievements)
+                    
+                    // 设置标签页
+                    SettingsView()
+                        .tag(NavigationManager.TabViewSelection.settings)
+                }
+                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                .edgesIgnoringSafeArea(.bottom)
                 
-                // 时间去哪了标签页
-                TimeWhereView()
-                    .environmentObject(viewModel)
-                    .environmentObject(themeManager)
-                    .environmentObject(userModel)
-                    .tag(NavigationManager.TabViewSelection.timeAnalysis)
-                
-                // 成就标签页
-                AchievementCollectionView(achievementManager: AchievementManager.shared)
-                    .tag(NavigationManager.TabViewSelection.achievements)
-                
-                // 设置标签页
-                SettingsView()
-                    .tag(NavigationManager.TabViewSelection.settings)
+                // 如果需要禁用滑动，覆盖一个透明的遮罩层拦截手势
+                if disableTabSwipe {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .allowsHitTesting(true)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .edgesIgnoringSafeArea(.all)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in }
+                                .onEnded { _ in }
+                        )
+                }
             }
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
-            .edgesIgnoringSafeArea(.bottom)
-            .safeAreaInset(edge: .bottom) {
-                // Custom tab bar with adjusted position
-                TabBarView(selectedTab: $selectedTab)
-                    .background(themeManager.colors.secondaryBackground)
-                    .frame(height: 55) // 修改固定高度为55
-            }
+            
+            // 将TabBar移到VStack底部，确保它位于ZStack之外
+            TabBarView(selectedTab: $selectedTab)
+                .background(themeManager.colors.secondaryBackground)
         }
         .ignoresSafeArea(edges: .bottom)
         .onChange(of: selectedTab) { newValue in

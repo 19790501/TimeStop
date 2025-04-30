@@ -13,7 +13,7 @@ struct FavoriteTask: Codable, Identifiable {
 }
 
 // 定义任务类型到文件顶层
-enum TaskType: String, CaseIterable {
+enum TaskType: String, CaseIterable, Codable {
     case meeting = "会议"
     case thinking = "思考"
     case work = "工作"
@@ -65,16 +65,23 @@ enum TaskType: String, CaseIterable {
     }
 }
 
+// 时间模式枚举
+enum TimeMode: Int, Codable {
+    case minutes
+    case hours
+}
+
 struct CreateTaskView: View {
     @EnvironmentObject var viewModel: AppViewModel
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var navigationManager: NavigationManager
+    // 移除环境变量依赖
+    // @Environment(\.disableTabSwipe) private var disableTabSwipe
+    
+    // 仅保留状态变量
+    @State private var tabSwipeDisabled: Bool = false
     
     // MARK: - State Properties
-    @State private var selectedTaskType: TaskType = .work
-    @State private var selectedTimeMode: TimeMode = .minutes
-    @State private var selectedMinutes: Int = 30 // 分钟滑块值（0-59）
-    @State private var selectedHours: Int = 0    // 小时滑块值（0-12）
     @State private var maxMinutes: Int = 59      // 分钟滑块最大值
     @State private var maxHours: Int = 12        // 小时滑块最大值
     @State private var isShowingTimerClocks: Bool = false  // 确保初始状态为隐藏
@@ -107,6 +114,9 @@ struct CreateTaskView: View {
     private func updateMinutesFromDrag(value: DragGesture.Value) {
         // 立即设置拖动状态，禁用滚动
         isDraggingSlider = true
+        // 禁用TabView滑动 - 触发事件通知
+        NotificationCenter.default.post(name: NSNotification.Name("DisableTabSwipe"), object: nil, userInfo: ["disabled": true])
+        tabSwipeDisabled = true
         
         let screenWidth = (UIScreen.main.bounds.width - 50) * 0.85 // 与显示宽度保持一致
         
@@ -125,16 +135,18 @@ struct CreateTaskView: View {
         let newMinutes = (rawMinutes / 5) * 5
         
         // 仅当值发生变化时才播放反馈和更新状态
-        if selectedMinutes != newMinutes {
+        if viewModel.selectedMinutes != newMinutes {
             // 播放触觉反馈
             playFeedback()
             
             // 更新状态
-            selectedMinutes = min(max(0, newMinutes), safeMaxMinutes)
+            viewModel.selectedMinutes = min(max(0, newMinutes), safeMaxMinutes)
+            // 保存设置
+            viewModel.saveTimerSettings()
         }
         
         // 设置当前时间模式
-        selectedTimeMode = .minutes
+        viewModel.selectedTimeMode = .minutes
         
         // 显示时间显示器
         if !isShowingTimerClocks {
@@ -148,6 +160,9 @@ struct CreateTaskView: View {
     private func updateHoursFromDrag(value: DragGesture.Value) {
         // 立即设置拖动状态，禁用滚动
         isDraggingSlider = true
+        // 禁用TabView滑动 - 触发事件通知
+        NotificationCenter.default.post(name: NSNotification.Name("DisableTabSwipe"), object: nil, userInfo: ["disabled": true])
+        tabSwipeDisabled = true
         
         let screenWidth = (UIScreen.main.bounds.width - 50) * 0.85 // 与显示宽度保持一致
         
@@ -165,16 +180,18 @@ struct CreateTaskView: View {
         let rawHours = Int(percentage * CGFloat(safeMaxHours))
         
         // 仅当值发生变化时才播放反馈和更新状态
-        if selectedHours != rawHours {
+        if viewModel.selectedHours != rawHours {
             // 播放触觉反馈
             playFeedback()
             
             // 更新状态
-            selectedHours = min(max(0, rawHours), safeMaxHours)
+            viewModel.selectedHours = min(max(0, rawHours), safeMaxHours)
+            // 保存设置
+            viewModel.saveTimerSettings()
         }
         
         // 设置当前时间模式
-        selectedTimeMode = .hours
+        viewModel.selectedTimeMode = .hours
         
         // 显示时间显示器
         if !isShowingTimerClocks {
@@ -235,11 +252,13 @@ struct CreateTaskView: View {
                                 ForEach(TaskType.allCases, id: \.self) { type in
                                     TaskTypeButton(
                                         type: type,
-                                        isSelected: selectedTaskType == type,
+                                        isSelected: viewModel.selectedTaskType == type,
                                         themeManager: themeManager,
                                         onTap: {
                                             viewModel.playButtonSound() // 恢复按钮声音
-                                            selectedTaskType = type
+                                            viewModel.selectedTaskType = type
+                                            // 保存设置
+                                            viewModel.saveTimerSettings()
                                         }
                                     )
                                 }
@@ -253,16 +272,18 @@ struct CreateTaskView: View {
                             TimeSlider(
                                 title: "分钟",
                                 subtitle: "时间缝纫鸡",
-                                value: selectedMinutes,
+                                value: viewModel.selectedMinutes,
                                 maxValue: maxMinutes,
-                                isSelected: selectedTimeMode == .minutes,
+                                isSelected: viewModel.selectedTimeMode == .minutes,
                                 unit: "分钟",
                                 step: 5,
                                 onValueChanged: { value in
                                     updateMinutesFromDrag(value: value)
                                 },
                                 onTap: {
-                                    selectedTimeMode = .minutes
+                                    viewModel.selectedTimeMode = .minutes
+                                    // 保存设置
+                                    viewModel.saveTimerSettings()
                                 },
                                 onDragEnded: {
                                     handleDragEnded()
@@ -275,16 +296,18 @@ struct CreateTaskView: View {
                             TimeSlider(
                                 title: "小时",
                                 subtitle: "时间吞金兽",
-                                value: selectedHours,
+                                value: viewModel.selectedHours,
                                 maxValue: maxHours,
-                                isSelected: selectedTimeMode == .hours,
+                                isSelected: viewModel.selectedTimeMode == .hours,
                                 unit: "小时",
                                 step: 1,
                                 onValueChanged: { value in
                                     updateHoursFromDrag(value: value)
                                 },
                                 onTap: {
-                                    selectedTimeMode = .hours
+                                    viewModel.selectedTimeMode = .hours
+                                    // 保存设置
+                                    viewModel.saveTimerSettings()
                                 },
                                 onDragEnded: {
                                     handleDragEnded()
@@ -461,22 +484,16 @@ struct CreateTaskView: View {
         // 触觉反馈
         hapticImpact.impactOccurred(intensity: 0.6)
     }
-    
-    // 时间模式枚举
-    private enum TimeMode {
-        case minutes
-        case hours
-    }
 
     // 计算属性 - 总时长（分钟）
     private var totalDurationMinutes: Int {
-        return selectedHours * 60 + selectedMinutes
+        return viewModel.selectedHours * 60 + viewModel.selectedMinutes
     }
     
     // 计算属性 - 时长显示字符串
     private func durationTimeString() -> String {
-        let hours = selectedHours
-        let minutes = selectedMinutes
+        let hours = viewModel.selectedHours
+        let minutes = viewModel.selectedMinutes
         
         return String(format: "%02d:%02d", hours, minutes)
     }
@@ -503,6 +520,9 @@ struct CreateTaskView: View {
     private func handleDragEnded() {
         // 即刻允许滚动，不再延迟
         isDraggingSlider = false
+        // 重新启用TabView滑动 - 触发事件通知
+        NotificationCenter.default.post(name: NSNotification.Name("DisableTabSwipe"), object: nil, userInfo: ["disabled": false])
+        tabSwipeDisabled = false
         
         // 延迟隐藏时钟显示
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -566,13 +586,13 @@ struct CreateTaskView: View {
     private func startTask() {
         viewModel.playSuccessSound()
         
-        let taskTitle = selectedTaskType.rawValue
+        let taskTitle = viewModel.selectedTaskType.rawValue
         let duration = totalDurationMinutes // 使用总时长
         
         viewModel.createTaskWithVerification(
             title: taskTitle, 
             duration: duration, 
-            focusType: selectedTaskType.focusType
+            focusType: viewModel.selectedTaskType.focusType
         )
         
         if let newTask = viewModel.tasks.last {

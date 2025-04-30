@@ -138,7 +138,7 @@ class UserModel: ObservableObject {
     }
     
     private func handleError(_ error: Error) {
-        DispatchQueue.main.async {
+        DispatchQueue.main.async(execute: DispatchWorkItem {
             self.hasError = true
             self.errorMessage = error.localizedDescription
             
@@ -151,7 +151,7 @@ class UserModel: ObservableObject {
                 object: nil,
                 userInfo: ["error": error]
             )
-        }
+        })
     }
     
     func generateTestData() {

@@ -147,6 +147,7 @@ struct TimeSlider: View {
             }
         }
         .onTapGesture(perform: onTap)
+        .contentShape(Rectangle()) // 确保整个区域可点击
     }
 }
 
@@ -192,7 +193,8 @@ struct SliderTrack: View {
         }
         .frame(height: 40) // 增加高度以便更好地接收触摸事件
         .contentShape(Rectangle()) // 使整个区域可点击
-        .gesture(
+        // 使用 highPriorityGesture 确保滑块手势优先于TabView滑动
+        .highPriorityGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .local)
                 .onChanged(onValueChanged)
                 .onEnded { _ in onDragEnded() }
